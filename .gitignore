@@ -5,8 +5,8 @@ dist/
 build/
 .eggs/
 *.onnx
-data/lfw/
-data/*.npy
-results/*.png
+data/
+results/
 .faceflash/
 .venv/
+rust/target/

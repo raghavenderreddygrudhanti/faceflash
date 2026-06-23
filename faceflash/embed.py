@@ -61,8 +61,11 @@ class FaceEmbedder:
         inp = self.preprocess(face_img)
         outputs = self.session.run(None, {self.input_name: inp})
         embedding = outputs[0][0]
-        # L2 normalize
-        embedding = embedding / np.linalg.norm(embedding)
+        # L2 normalize (guard against degenerate zero-norm)
+        norm = np.linalg.norm(embedding)
+        if norm < 1e-10:
+            raise ValueError("Face embedding has zero norm (degenerate face detection)")
+        embedding = embedding / norm
         return embedding
 
     def embed_batch(self, face_images: list) -> np.ndarray:

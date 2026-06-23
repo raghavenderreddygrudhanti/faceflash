@@ -1,0 +1,21 @@
+[package]
+name = "faceflash-core"
+version = "0.1.0"
+edition = "2021"
+description = "Ultra-fast binary vector search for face retrieval"
+license = "MIT"
+
+[lib]
+name = "faceflash_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+numpy = "0.22"
+rayon = "1.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+target-cpu = "native"
