@@ -1,0 +1,163 @@
+{
+  "benchmark": "LFW Rigorous",
+  "dataset": "LFW (Labeled Faces in the Wild)",
+  "n_database": 12933,
+  "n_queries": 300,
+  "n_identities": 5749,
+  "environment": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "cpu": "arm",
+    "python": "3.9.6",
+    "faiss_threads": 1,
+    "faceflash_backend": "faceflash_core (Rust, POPCNT-accelerated)"
+  },
+  "methodology": {
+    "metric": "inner product (cosine for L2-normalized vectors)",
+    "faiss_index": "IndexFlatIP",
+    "faiss_mode": "single-threaded (omp_set_num_threads=1)",
+    "warmup_queries": 5,
+    "timing": "time.perf_counter() per query",
+    "ground_truth": "exact brute-force cosine argmax"
+  },
+  "results": {
+    "faiss_flat": {
+      "method": "FAISS-Flat (IP, exact)",
+      "recall_1": 1.0,
+      "latency_single_ms": {
+        "mean": 0.5225406666666754,
+        "median": 0.49983350000004645,
+        "p95": 0.6946056000000977,
+        "p99": 0.719271419999885
+      },
+      "latency_batch_per_query_ms": 0.015522916666666683,
+      "latency_batch_total_ms": 4.656875000000005,
+      "memory_mb": 25.259765625
+    },
+    "faceflash_10": {
+      "method": "FaceFlash (top-10)",
+      "recall_1": 1.0,
+      "n_candidates": 10,
+      "latency_binary_ms": {
+        "mean": 0.0549852666666717,
+        "median": 0.05439550000008175,
+        "p95": 0.06063125000013159,
+        "p99": 0.06708925999980186
+      },
+      "latency_rerank_ms": {
+        "mean": 0.005903619999995484,
+        "median": 0.005542000000025027,
+        "p95": 0.008502050000080974,
+        "p99": 0.009419080000012679
+      },
+      "latency_total_ms": {
+        "mean": 0.061064143333338095,
+        "median": 0.06012500000007748,
+        "p95": 0.06645654999999363,
+        "p99": 0.07647273999997316
+      },
+      "memory_binary_kb": 808.3125,
+      "memory_float_mb": 25.259765625
+    },
+    "faceflash_30": {
+      "method": "FaceFlash (top-30)",
+      "recall_1": 1.0,
+      "n_candidates": 30,
+      "latency_binary_ms": {
+        "mean": 0.055116676666668855,
+        "median": 0.05466649999996687,
+        "p95": 0.0597666499999261,
+        "p99": 0.0675661700000307
+      },
+      "latency_rerank_ms": {
+        "mean": 0.010551526666663,
+        "median": 0.010332999999973502,
+        "p95": 0.012916049999978085,
+        "p99": 0.019002499999991592
+      },
+      "latency_total_ms": {
+        "mean": 0.06584402666666897,
+        "median": 0.06495799999994833,
+        "p95": 0.07262500000004835,
+        "p99": 0.07980323999996707
+      },
+      "memory_binary_kb": 808.3125,
+      "memory_float_mb": 25.259765625
+    },
+    "faceflash_50": {
+      "method": "FaceFlash (top-50)",
+      "recall_1": 1.0,
+      "n_candidates": 50,
+      "latency_binary_ms": {
+        "mean": 0.06361750000000536,
+        "median": 0.06341599999992731,
+        "p95": 0.06888334999997081,
+        "p99": 0.07388292000000128
+      },
+      "latency_rerank_ms": {
+        "mean": 0.015502383333330094,
+        "median": 0.015041500000090302,
+        "p95": 0.018848550000016843,
+        "p99": 0.02571149999998301
+      },
+      "latency_total_ms": {
+        "mean": 0.07932541666666681,
+        "median": 0.07849999999987034,
+        "p95": 0.08772675000011665,
+        "p99": 0.09479866000006609
+      },
+      "memory_binary_kb": 808.3125,
+      "memory_float_mb": 25.259765625
+    },
+    "faceflash_100": {
+      "method": "FaceFlash (top-100)",
+      "recall_1": 1.0,
+      "n_candidates": 100,
+      "latency_binary_ms": {
+        "mean": 0.06411139000000639,
+        "median": 0.063667000000045,
+        "p95": 0.07145800000007974,
+        "p99": 0.07580200000007363
+      },
+      "latency_rerank_ms": {
+        "mean": 0.02835210000000421,
+        "median": 0.02685399999990956,
+        "p95": 0.03920449999995635,
+        "p99": 0.05538000000007814
+      },
+      "latency_total_ms": {
+        "mean": 0.09267361666666307,
+        "median": 0.09079150000002034,
+        "p95": 0.10639375000009998,
+        "p99": 0.11947933999998378
+      },
+      "memory_binary_kb": 808.3125,
+      "memory_float_mb": 25.259765625
+    },
+    "faceflash_200": {
+      "method": "FaceFlash (top-200)",
+      "recall_1": 1.0,
+      "n_candidates": 200,
+      "latency_binary_ms": {
+        "mean": 0.06409123333332989,
+        "median": 0.06383349999994348,
+        "p95": 0.0680062499999523,
+        "p99": 0.07242308999985347
+      },
+      "latency_rerank_ms": {
+        "mean": 0.04952540333333403,
+        "median": 0.047083999999975035,
+        "p95": 0.06122354999993366,
+        "p99": 0.09385549999998853
+      },
+      "latency_total_ms": {
+        "mean": 0.1138229066666733,
+        "median": 0.11147949999990026,
+        "p95": 0.1298374999999297,
+        "p99": 0.15871476000014034
+      },
+      "memory_binary_kb": 808.3125,
+      "memory_float_mb": 25.259765625
+    }
+  },
+  "timestamp": "2026-06-23 16:33:49"
+}

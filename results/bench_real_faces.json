@@ -1,0 +1,76 @@
+{
+  "benchmark": "FaceFlash vs FAISS",
+  "data_source": "Synthetic (ArcFace-like)",
+  "n_database": 999500,
+  "timestamp": "2026-06-23 11:41:59",
+  "results": [
+    {
+      "method": "FAISS-Flat (exact)",
+      "build_time_s": 0.2092766250000011,
+      "avg_latency_ms": 39.29717200599984,
+      "p99_latency_ms": 45.07171490999998,
+      "batch_qps": 1001.4738349928491,
+      "recall_1": 1.0,
+      "memory_mb": 1952.1484375,
+      "batch_latency_ms": 0.9985283339999996
+    },
+    {
+      "method": "FAISS-IVF",
+      "build_time_s": 0.8954737079999973,
+      "avg_latency_ms": 10.656420638000029,
+      "p99_latency_ms": 13.959793989996479,
+      "batch_qps": 240.67831814472663,
+      "recall_1": 0.874,
+      "memory_mb": 1952.1484375
+    },
+    {
+      "method": "FAISS-PQ",
+      "build_time_s": 12.195005834,
+      "avg_latency_ms": 16.28463000200034,
+      "p99_latency_ms": 16.94896324000979,
+      "batch_qps": 468.9041887386563,
+      "recall_1": 0.576,
+      "memory_mb": 61.004638671875
+    },
+    {
+      "method": "FaceFlash (random hash)",
+      "build_time_s": 0.6032515830000023,
+      "avg_latency_ms": 2.841452234000087,
+      "p99_latency_ms": 3.1817365799932413,
+      "batch_qps": 351.9327152623778,
+      "recall_1": 1.0,
+      "memory_mb": 61.004638671875,
+      "binary_only_latency_ms": 2.3975193219999085,
+      "binary_only_recall_1": 0.4
+    },
+    {
+      "method": "FaceFlash (binary-only)",
+      "build_time_s": 0.6032515830000023,
+      "avg_latency_ms": 2.3975193219999085,
+      "p99_latency_ms": 2.6372712541998995,
+      "batch_qps": 417.0977855418669,
+      "recall_1": 0.4,
+      "memory_mb": 61.004638671875
+    },
+    {
+      "method": "FaceFlash (learned hash) \u2605",
+      "build_time_s": 9.15081145900001,
+      "avg_latency_ms": 4.617127010000274,
+      "p99_latency_ms": 16.374594249996864,
+      "batch_qps": 216.58490178721348,
+      "recall_1": 1.0,
+      "memory_mb": 61.004638671875,
+      "binary_only_latency_ms": 2.3999184400000786,
+      "binary_only_recall_1": 0.398
+    },
+    {
+      "method": "FaceFlash learned (binary-only)",
+      "build_time_s": 9.15081145900001,
+      "avg_latency_ms": 2.3999184400000786,
+      "p99_latency_ms": 2.6399102840000865,
+      "batch_qps": 416.68082687008615,
+      "recall_1": 0.398,
+      "memory_mb": 61.004638671875
+    }
+  ]
+}

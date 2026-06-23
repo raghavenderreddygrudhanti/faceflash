@@ -1,0 +1,28 @@
+[
+  {
+    "method": "DeepFace-style (brute force cosine)",
+    "recall_1": 1.0,
+    "mean_ms": 4.649789824999996,
+    "p99_ms": 6.412700249999894,
+    "note": "NumPy dot product \u2014 same as DeepFace.find() internals"
+  },
+  {
+    "method": "InsightFace-style (brute force cosine)",
+    "recall_1": 1.0,
+    "mean_ms": 4.532361899999999,
+    "p99_ms": 4.698332079999745,
+    "note": "NumPy dot product \u2014 same as insightface.app internals"
+  },
+  {
+    "method": "FaceFlash (top-100)",
+    "recall_1": 0.995,
+    "mean_ms": 0.4624554150000115,
+    "p99_ms": 0.49650374999968605
+  },
+  {
+    "method": "FaceFlash (top-300)",
+    "recall_1": 1.0,
+    "mean_ms": 0.5150289399999952,
+    "p99_ms": 0.5501824100000974
+  }
+]
