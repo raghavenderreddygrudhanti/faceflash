@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "faceflash"
+version = "0.1.0"
+description = "Sub-linear face retrieval at million scale via binary vector search"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Raghavender Grudhanti", email = "raghavenderreddy1212@gmail.com"}
+]
+keywords = ["face-recognition", "vector-search", "binary-quantization", "arcface", "million-scale"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.24",
+    "onnxruntime>=1.16",
+    "turbovec>=0.1.0",
+    "Pillow>=10.0",
+    "tqdm>=4.60",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "matplotlib", "pandas"]
+benchmark = ["faiss-cpu>=1.7", "deepface>=0.0.80"]
+
+[project.urls]
+Homepage = "https://github.com/raghavenderreddygrudhanti/faceflash"
+Paper = "https://arxiv.org/abs/TBD"
+
+[tool.setuptools.packages.find]
+include = ["faceflash*"]
