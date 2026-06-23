@@ -9,3 +9,4 @@ data/lfw/
 data/*.npy
 results/*.png
 .faceflash/
+.venv/
