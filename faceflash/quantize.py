@@ -8,23 +8,28 @@ compressed to binary with minimal accuracy loss.
 import numpy as np
 
 
-def float_to_binary(embedding: np.ndarray) -> np.ndarray:
+def float_to_binary(embedding: np.ndarray, projection: np.ndarray = None) -> np.ndarray:
     """
     Convert a normalized float embedding to binary vector.
 
-    Method: Sign-based quantization (simplest, surprisingly effective).
-    Each dimension becomes 1 if positive, 0 if negative.
+    Method: Random hyperplane projection (SimHash).
+    Projects embedding onto random planes, takes sign.
+    Preserves cosine similarity in Hamming space.
 
     512 floats (2048 bytes) → 512 bits (64 bytes) = 32x compression.
-
-    For face embeddings specifically, this preserves ~95%+ of the
-    cosine similarity ranking (proven in multiple papers).
     """
+    if projection is not None:
+        projected = embedding @ projection.T
+        return (projected > 0).astype(np.uint8)
+    # Fallback: sign-based (works well for structured embeddings like ArcFace)
     return (embedding > 0).astype(np.uint8)
 
 
-def float_to_binary_batch(embeddings: np.ndarray) -> np.ndarray:
+def float_to_binary_batch(embeddings: np.ndarray, projection: np.ndarray = None) -> np.ndarray:
     """Quantize a batch of embeddings to binary."""
+    if projection is not None:
+        projected = embeddings @ projection.T
+        return (projected > 0).astype(np.uint8)
     return (embeddings > 0).astype(np.uint8)
 
 
@@ -44,12 +49,13 @@ def hamming_distance(a: np.ndarray, b: np.ndarray) -> int:
 
 
 def hamming_distance_batch(query: np.ndarray, database: np.ndarray) -> np.ndarray:
-    """Compute Hamming distances between query and all database vectors."""
-    # XOR then popcount
+    """Compute Hamming distances between query and all database vectors.
+    Fully vectorized with NumPy — no Python loops.
+    """
+    # XOR all rows with query
     xor = np.bitwise_xor(database, query)
-    # Count bits per row
-    distances = np.array([
-        sum(bin(byte).count('1') for byte in row)
-        for row in xor
-    ])
+    # Popcount via lookup table (fast, pure numpy)
+    # Unpack bits and sum per row
+    bits = np.unpackbits(xor, axis=1)
+    distances = bits.sum(axis=1)
     return distances

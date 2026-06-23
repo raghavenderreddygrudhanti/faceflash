@@ -17,19 +17,24 @@ class FaceIndex:
     Binary face vector index for sub-linear search.
 
     Stores packed binary vectors + metadata (person ID, path).
-    Search is O(n) in raw form but with TurboVec routing becomes sub-linear.
+    Uses random hyperplane projection (SimHash) for better recall.
     """
 
-    def __init__(self):
+    def __init__(self, dim: int = 512, n_bits: int = 512):
         self.vectors: Optional[np.ndarray] = None  # Packed binary vectors
         self.labels: List[str] = []                 # Person IDs
         self.paths: List[str] = []                  # Image paths
         self.float_vectors: Optional[np.ndarray] = None  # Original (for reranking)
         self.count = 0
+        self.dim = dim
+        self.n_bits = n_bits
+        # Random projection matrix for SimHash (preserves cosine similarity)
+        self.projection = np.random.randn(n_bits, dim).astype(np.float32)
+        self.projection /= np.linalg.norm(self.projection, axis=1, keepdims=True)
 
     def add(self, embedding: np.ndarray, label: str, path: str = ""):
         """Add a face embedding to the index."""
-        binary = float_to_binary(embedding)
+        binary = float_to_binary(embedding, self.projection)
         packed = pack_binary(binary)
 
         if self.vectors is None:
@@ -53,14 +58,13 @@ class FaceIndex:
     def search(self, query_embedding: np.ndarray, k: int = 1) -> List[Tuple[str, float, int]]:
         """
         Search for the closest face(s) to the query.
-
-        Returns: List of (label, distance, index) tuples, sorted by distance.
+        Two-phase: binary filter (fast) → cosine rerank (accurate).
         """
         if self.vectors is None or self.count == 0:
             return []
 
         # Phase 1: Binary search (ultra-fast, coarse)
-        query_binary = float_to_binary(query_embedding)
+        query_binary = float_to_binary(query_embedding, self.projection)
         query_packed = pack_binary(query_binary)
 
         start = time.perf_counter()
@@ -97,7 +101,7 @@ class FaceIndex:
         if self.vectors is None:
             return []
 
-        query_binary = float_to_binary(query_embedding)
+        query_binary = float_to_binary(query_embedding, self.projection)
         query_packed = pack_binary(query_binary)
 
         distances = hamming_distance_batch(query_packed, self.vectors)
