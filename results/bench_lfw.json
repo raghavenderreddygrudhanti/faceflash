@@ -1,0 +1,7 @@
+{
+  "dataset": "LFW",
+  "n_database": 12933,
+  "n_queries": 300,
+  "gt_avg_cosine": 0.6155959963798523,
+  "timestamp": "2026-06-23 13:47:13"
+}

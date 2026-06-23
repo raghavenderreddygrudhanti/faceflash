@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-06-23 12:30:17",
+  "n_identities": 5000,
+  "n_total": 50000,
+  "ablation": {
+    "Random": {
+      "binary_recall": 0.465,
+      "cand_99": 750,
+      "recall_at_99": 1.0
+    },
+    "PCA": {
+      "binary_recall": 0.555,
+      "cand_99": 25,
+      "recall_at_99": 0.99
+    },
+    "PCA+ITQ": {
+      "binary_recall": 0.55,
+      "cand_99": 50,
+      "recall_at_99": 0.995
+    },
+    "IPBH": {
+      "binary_recall": 0.595,
+      "cand_99": 40,
+      "recall_at_99": 0.99
+    }
+  },
+  "generalization": [
+    {
+      "candidates": 10,
+      "random": 0.935,
+      "pca_itq": 0.99,
+      "ipbh": 0.97
+    },
+    {
+      "candidates": 20,
+      "random": 0.955,
+      "pca_itq": 0.99,
+      "ipbh": 0.975
+    },
+    {
+      "candidates": 50,
+      "random": 0.97,
+      "pca_itq": 0.995,
+      "ipbh": 0.99
+    },
+    {
+      "candidates": 100,
+      "random": 0.985,
+      "pca_itq": 0.995,
+      "ipbh": 0.995
+    },
+    {
+      "candidates": 200,
+      "random": 0.99,
+      "pca_itq": 1.0,
+      "ipbh": 1.0
+    },
+    {
+      "candidates": 500,
+      "random": 0.995,
+      "pca_itq": 1.0,
+      "ipbh": 1.0
+    }
+  ]
+}

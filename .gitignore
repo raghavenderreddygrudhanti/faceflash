@@ -5,8 +5,9 @@ dist/
 build/
 .eggs/
 *.onnx
-data/
-results/
 .faceflash/
 .venv/
 rust/target/
+data/*.npy
+data/*.tgz
+data/lfw_funneled/
