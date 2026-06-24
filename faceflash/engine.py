@@ -26,9 +26,20 @@ class FaceFlash:
         result = ff.search("query.jpg")
     """
 
-    def __init__(self, index_path: Optional[str] = None):
+    def __init__(self, index_path: Optional[str] = None,
+                 n_bits: int = 512, n_candidates: int = 100):
+        """
+        Args:
+            n_bits: binary code length. Memory = n_bits/8 bytes per face.
+                    512 is exact-capable; 256 halves memory at ~99% recall.
+                    See the operating-point table in the README.
+            n_candidates: rerank shortlist size — the search-effort knob,
+                          independent of k. More candidates = higher recall
+                          and more float reranks (= more mmap reads on edge).
+        """
         self._embedder: Optional[FaceEmbedder] = None
-        self.index = FaceIndex()
+        self.n_candidates = n_candidates
+        self.index = FaceIndex(n_bits=n_bits)
         if index_path and Path(index_path).exists():
             self.index.load(index_path)
 
@@ -90,7 +101,8 @@ class FaceFlash:
 
         return {"registered": registered, "errors": errors, "total": self.index.count}
 
-    def search(self, image_path: str, k: int = 1, threshold: float = 0.4) -> List[dict]:
+    def search(self, image_path: str, k: int = 1, threshold: float = 0.4,
+               n_candidates: Optional[int] = None) -> List[dict]:
         """
         Search for a face in the index.
 
@@ -98,6 +110,7 @@ class FaceFlash:
             image_path: Path to query image
             k: Number of results
             threshold: Minimum cosine similarity to consider a match
+            n_candidates: override the instance default search-effort knob
 
         Returns:
             List of match dicts with name, confidence, time_ms
@@ -111,7 +124,7 @@ class FaceFlash:
         embed_time = time.perf_counter() - start
 
         search_start = time.perf_counter()
-        results = self.index.search(embedding, k=k)
+        results = self.index.search(embedding, k=k, n_candidates=n_candidates or self.n_candidates)
         search_time = time.perf_counter() - search_start
 
         total_time = time.perf_counter() - start

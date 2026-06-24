@@ -112,10 +112,15 @@ class FaceIndex:
         # Re-encode all existing vectors with the fitted quantizer
         self.vectors = self.quantizer.encode(self.float_vectors)
 
-    def search(self, query_embedding: np.ndarray, k: int = 1) -> List[Tuple[str, float, int]]:
+    def search(self, query_embedding: np.ndarray, k: int = 1,
+               n_candidates: Optional[int] = None) -> List[Tuple[str, float, int]]:
         """
         Two-phase search: Hamming filter → cosine rerank.
         Uses Rust backend when available (50x faster).
+
+        n_candidates is the search-effort knob, independent of k (the result
+        count). More candidates → higher recall + more float reranks. Defaults
+        to max(100, k*10), which reaches ≥99% recall in benchmarks.
         """
         if self.vectors is None or self.count == 0:
             return []
@@ -128,7 +133,9 @@ class FaceIndex:
             query_packed = np.packbits(query_binary)
 
         # Phase 1: Hamming filter (Rust or NumPy)
-        n_candidates = min(k * 10, self.count - 1) if self.count > 1 else 1
+        if n_candidates is None:
+            n_candidates = max(100, k * 10)
+        n_candidates = min(n_candidates, self.count - 1) if self.count > 1 else 1
 
         if _HAS_RUST:
             topk = _rust.hamming_topk(query_packed, self.vectors, n_candidates)
