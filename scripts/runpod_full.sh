@@ -122,12 +122,14 @@ python -m venv .venv
 source .venv/bin/activate
 log "  Installing Python packages..."
 log "    - numpy, pillow, tqdm (core)"
-log "    - onnxruntime-gpu (GPU-accelerated face embedding)"
+log "    - onnxruntime-gpu (GPU-accelerated face embedding, CUDA 12)"
 log "    - faiss-cpu, hnswlib, usearch (baseline comparison)"
 log "    - datasets, huggingface-hub (data streaming)"
 log "    - maturin (Rust→Python bridge)"
 log "    - matplotlib (figures)"
-pip install -q numpy onnxruntime-gpu pillow tqdm faiss-cpu hnswlib usearch datasets huggingface-hub maturin matplotlib 2>&1 | tail -3
+pip install -q numpy pillow tqdm faiss-cpu hnswlib usearch datasets huggingface-hub maturin matplotlib 2>&1 | tail -3
+# Install onnxruntime-gpu compatible with CUDA 12.x (RunPod default)
+pip install -q onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ 2>&1 | tail -3
 log "  ✓ All Python packages installed"
 log ""
 
