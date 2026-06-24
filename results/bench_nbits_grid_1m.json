@@ -1,0 +1,381 @@
+{
+  "benchmark": "n_bits x candidates grid (memory vs recall)",
+  "dataset": "vggface2_1m_embeddings.npy",
+  "n_database": 999000,
+  "n_queries": 1000,
+  "recall_definition": "Recall@1 vs exact cosine nearest neighbor",
+  "timing": "best-of-5 per query, single-threaded",
+  "n_bootstrap": 2000,
+  "faiss_baseline_ms": 47.8562,
+  "timestamp": "2026-06-24 04:26:04",
+  "grid": [
+    {
+      "n_bits": 128,
+      "bytes_per_face": 16,
+      "index_mb": 15.24,
+      "binary_recall_at1": 0.273,
+      "candidates": [
+        {
+          "n_cand": 10,
+          "recall_at1": 0.562,
+          "recall_ci95": [
+            0.531,
+            0.592
+          ],
+          "latency_mean_ms": 3.3831,
+          "latency_median_ms": 3.3802,
+          "latency_p95_ms": 3.4643,
+          "speedup_vs_faiss": 14.1
+        },
+        {
+          "n_cand": 30,
+          "recall_at1": 0.668,
+          "recall_ci95": [
+            0.64,
+            0.697
+          ],
+          "latency_mean_ms": 3.3835,
+          "latency_median_ms": 3.3817,
+          "latency_p95_ms": 3.4588,
+          "speedup_vs_faiss": 14.1
+        },
+        {
+          "n_cand": 50,
+          "recall_at1": 0.719,
+          "recall_ci95": [
+            0.689,
+            0.747
+          ],
+          "latency_mean_ms": 3.3834,
+          "latency_median_ms": 3.3807,
+          "latency_p95_ms": 3.4602,
+          "speedup_vs_faiss": 14.1
+        },
+        {
+          "n_cand": 100,
+          "recall_at1": 0.784,
+          "recall_ci95": [
+            0.758,
+            0.808
+          ],
+          "latency_mean_ms": 3.3994,
+          "latency_median_ms": 3.3942,
+          "latency_p95_ms": 3.494,
+          "speedup_vs_faiss": 14.1
+        },
+        {
+          "n_cand": 200,
+          "recall_at1": 0.837,
+          "recall_ci95": [
+            0.814,
+            0.859
+          ],
+          "latency_mean_ms": 3.4056,
+          "latency_median_ms": 3.4019,
+          "latency_p95_ms": 3.4876,
+          "speedup_vs_faiss": 14.1
+        },
+        {
+          "n_cand": 300,
+          "recall_at1": 0.866,
+          "recall_ci95": [
+            0.844,
+            0.886
+          ],
+          "latency_mean_ms": 3.4322,
+          "latency_median_ms": 3.4235,
+          "latency_p95_ms": 3.554,
+          "speedup_vs_faiss": 13.9
+        },
+        {
+          "n_cand": 500,
+          "recall_at1": 0.891,
+          "recall_ci95": [
+            0.872,
+            0.91
+          ],
+          "latency_mean_ms": 3.4407,
+          "latency_median_ms": 3.4377,
+          "latency_p95_ms": 3.5172,
+          "speedup_vs_faiss": 13.9
+        }
+      ]
+    },
+    {
+      "n_bits": 256,
+      "bytes_per_face": 32,
+      "index_mb": 30.49,
+      "binary_recall_at1": 0.386,
+      "candidates": [
+        {
+          "n_cand": 10,
+          "recall_at1": 0.758,
+          "recall_ci95": [
+            0.732,
+            0.784
+          ],
+          "latency_mean_ms": 3.2126,
+          "latency_median_ms": 3.2039,
+          "latency_p95_ms": 3.3454,
+          "speedup_vs_faiss": 14.9
+        },
+        {
+          "n_cand": 30,
+          "recall_at1": 0.868,
+          "recall_ci95": [
+            0.845,
+            0.89
+          ],
+          "latency_mean_ms": 3.1875,
+          "latency_median_ms": 3.1854,
+          "latency_p95_ms": 3.2624,
+          "speedup_vs_faiss": 15.0
+        },
+        {
+          "n_cand": 50,
+          "recall_at1": 0.906,
+          "recall_ci95": [
+            0.888,
+            0.924
+          ],
+          "latency_mean_ms": 3.2011,
+          "latency_median_ms": 3.1996,
+          "latency_p95_ms": 3.2861,
+          "speedup_vs_faiss": 15.0
+        },
+        {
+          "n_cand": 100,
+          "recall_at1": 0.939,
+          "recall_ci95": [
+            0.924,
+            0.953
+          ],
+          "latency_mean_ms": 3.195,
+          "latency_median_ms": 3.1934,
+          "latency_p95_ms": 3.2692,
+          "speedup_vs_faiss": 15.0
+        },
+        {
+          "n_cand": 200,
+          "recall_at1": 0.968,
+          "recall_ci95": [
+            0.957,
+            0.979
+          ],
+          "latency_mean_ms": 3.2257,
+          "latency_median_ms": 3.2181,
+          "latency_p95_ms": 3.3271,
+          "speedup_vs_faiss": 14.8
+        },
+        {
+          "n_cand": 300,
+          "recall_at1": 0.974,
+          "recall_ci95": [
+            0.964,
+            0.984
+          ],
+          "latency_mean_ms": 3.234,
+          "latency_median_ms": 3.2328,
+          "latency_p95_ms": 3.3107,
+          "speedup_vs_faiss": 14.8
+        },
+        {
+          "n_cand": 500,
+          "recall_at1": 0.981,
+          "recall_ci95": [
+            0.972,
+            0.989
+          ],
+          "latency_mean_ms": 3.2794,
+          "latency_median_ms": 3.2769,
+          "latency_p95_ms": 3.3672,
+          "speedup_vs_faiss": 14.6
+        }
+      ]
+    },
+    {
+      "n_bits": 384,
+      "bytes_per_face": 48,
+      "index_mb": 45.73,
+      "binary_recall_at1": 0.468,
+      "candidates": [
+        {
+          "n_cand": 10,
+          "recall_at1": 0.835,
+          "recall_ci95": [
+            0.812,
+            0.858
+          ],
+          "latency_mean_ms": 4.1425,
+          "latency_median_ms": 4.1373,
+          "latency_p95_ms": 4.2424,
+          "speedup_vs_faiss": 11.6
+        },
+        {
+          "n_cand": 30,
+          "recall_at1": 0.932,
+          "recall_ci95": [
+            0.916,
+            0.947
+          ],
+          "latency_mean_ms": 4.1737,
+          "latency_median_ms": 4.1674,
+          "latency_p95_ms": 4.3021,
+          "speedup_vs_faiss": 11.5
+        },
+        {
+          "n_cand": 50,
+          "recall_at1": 0.955,
+          "recall_ci95": [
+            0.942,
+            0.967
+          ],
+          "latency_mean_ms": 4.1834,
+          "latency_median_ms": 4.1843,
+          "latency_p95_ms": 4.2724,
+          "speedup_vs_faiss": 11.4
+        },
+        {
+          "n_cand": 100,
+          "recall_at1": 0.967,
+          "recall_ci95": [
+            0.955,
+            0.978
+          ],
+          "latency_mean_ms": 4.1588,
+          "latency_median_ms": 4.1571,
+          "latency_p95_ms": 4.2571,
+          "speedup_vs_faiss": 11.5
+        },
+        {
+          "n_cand": 200,
+          "recall_at1": 0.986,
+          "recall_ci95": [
+            0.979,
+            0.993
+          ],
+          "latency_mean_ms": 4.1901,
+          "latency_median_ms": 4.1872,
+          "latency_p95_ms": 4.2934,
+          "speedup_vs_faiss": 11.4
+        },
+        {
+          "n_cand": 300,
+          "recall_at1": 0.988,
+          "recall_ci95": [
+            0.981,
+            0.994
+          ],
+          "latency_mean_ms": 4.2291,
+          "latency_median_ms": 4.2283,
+          "latency_p95_ms": 4.3181,
+          "speedup_vs_faiss": 11.3
+        },
+        {
+          "n_cand": 500,
+          "recall_at1": 0.993,
+          "recall_ci95": [
+            0.988,
+            0.998
+          ],
+          "latency_mean_ms": 4.2308,
+          "latency_median_ms": 4.2257,
+          "latency_p95_ms": 4.3345,
+          "speedup_vs_faiss": 11.3
+        }
+      ]
+    },
+    {
+      "n_bits": 512,
+      "bytes_per_face": 64,
+      "index_mb": 60.97,
+      "binary_recall_at1": 0.504,
+      "candidates": [
+        {
+          "n_cand": 10,
+          "recall_at1": 0.899,
+          "recall_ci95": [
+            0.88,
+            0.917
+          ],
+          "latency_mean_ms": 5.2482,
+          "latency_median_ms": 5.2464,
+          "latency_p95_ms": 5.3442,
+          "speedup_vs_faiss": 9.1
+        },
+        {
+          "n_cand": 30,
+          "recall_at1": 0.967,
+          "recall_ci95": [
+            0.956,
+            0.977
+          ],
+          "latency_mean_ms": 5.3091,
+          "latency_median_ms": 5.3099,
+          "latency_p95_ms": 5.4042,
+          "speedup_vs_faiss": 9.0
+        },
+        {
+          "n_cand": 50,
+          "recall_at1": 0.981,
+          "recall_ci95": [
+            0.972,
+            0.989
+          ],
+          "latency_mean_ms": 5.2826,
+          "latency_median_ms": 5.2784,
+          "latency_p95_ms": 5.3857,
+          "speedup_vs_faiss": 9.1
+        },
+        {
+          "n_cand": 100,
+          "recall_at1": 0.992,
+          "recall_ci95": [
+            0.986,
+            0.997
+          ],
+          "latency_mean_ms": 5.2991,
+          "latency_median_ms": 5.2983,
+          "latency_p95_ms": 5.3979,
+          "speedup_vs_faiss": 9.0
+        },
+        {
+          "n_cand": 200,
+          "recall_at1": 0.998,
+          "recall_ci95": [
+            0.995,
+            1.0
+          ],
+          "latency_mean_ms": 5.3328,
+          "latency_median_ms": 5.3329,
+          "latency_p95_ms": 5.4215,
+          "speedup_vs_faiss": 9.0
+        },
+        {
+          "n_cand": 300,
+          "recall_at1": 0.999,
+          "recall_ci95": [
+            0.997,
+            1.0
+          ],
+          "latency_mean_ms": 5.3447,
+          "latency_median_ms": 5.3465,
+          "latency_p95_ms": 5.4385,
+          "speedup_vs_faiss": 9.0
+        },
+        {
+          "n_cand": 500,
+          "recall_at1": 0.999,
+          "recall_ci95": [
+            0.997,
+            1.0
+          ],
+          "latency_mean_ms": 5.3637,
+          "latency_median_ms": 5.365,
+          "latency_p95_ms": 5.4577,
+          "speedup_vs_faiss": 8.9
+        }
+      ]
+    }
+  ]
+}
