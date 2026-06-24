@@ -40,6 +40,17 @@ REMOTE_SLUG="***REMOVED***rudhanti/faceflash"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"   # one timestamp for the whole run (no overwrites)
 export RUN_TS
 
+# Dataset is configurable. Default = VGGFace2 (few distinct identities).
+# For a meaningful 1:N test use MS1MV2 (~85K distinct people). Confirm the HF
+# repo id + fields FIRST with: python scripts/preflight_check.py --dataset <repo>
+# Then run, e.g.:
+#   export DATASET=<ms1mv2-hf-repo> SPLIT=train DATA_TAG=ms1m TARGET_N=1000000
+DATASET="${DATASET:-logasja/VGGFace2}"
+SPLIT="${SPLIT:-train}"
+DATA_TAG="${DATA_TAG:-vggface2_1m}"
+TARGET_N="${TARGET_N:-1000000}"
+export DATASET SPLIT DATA_TAG TARGET_N
+
 commit_and_push() {
     # commit_and_push "<message>" <paths...>
     local msg="$1"; shift
@@ -184,7 +195,7 @@ log ""
 mkdir -p data
 
 python << 'EXTRACT_EOF'
-import sys, time, numpy as np
+import sys, os, time, numpy as np
 from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
@@ -192,12 +203,15 @@ from tqdm import tqdm
 sys.path.insert(0, '.')
 from faceflash.embed import FaceEmbedder
 
-DATA_DIR = Path('data')
-OUT = DATA_DIR / 'vggface2_1m_embeddings.npy'
-OUT_L = DATA_DIR / 'vggface2_1m_labels.npy'
-CHECKPOINT = DATA_DIR / 'vggface2_1m_checkpoint.npz'
+DATASET = os.environ.get('DATASET', 'logasja/VGGFace2')
+SPLIT = os.environ.get('SPLIT', 'train')
+DATA_TAG = os.environ.get('DATA_TAG', 'vggface2_1m')
+TARGET = int(os.environ.get('TARGET_N', '1000000'))
 
-TARGET = 1000000
+DATA_DIR = Path('data')
+OUT = DATA_DIR / f'{DATA_TAG}_embeddings.npy'
+OUT_L = DATA_DIR / f'{DATA_TAG}_labels.npy'
+CHECKPOINT = DATA_DIR / f'{DATA_TAG}_checkpoint.npz'
 
 if OUT.exists():
     embs = np.load(OUT)
@@ -216,8 +230,8 @@ if CHECKPOINT.exists():
     print(f'  Resuming from checkpoint: {start_count:,} embeddings already done')
 
 from datasets import load_dataset
-print(f'  Connecting to HuggingFace (logasja/VGGFace2, test split)...')
-ds = load_dataset('logasja/VGGFace2', split='train', streaming=True)
+print(f'  Connecting to HuggingFace ({DATASET}, split={SPLIT})...')
+ds = load_dataset(DATASET, split=SPLIT, streaming=True)
 
 print(f'  Loading ArcFace model...')
 embedder = FaceEmbedder()
@@ -325,7 +339,7 @@ log "  All single-threaded for fair comparison."
 log ""
 
 python << 'BENCH_EOF'
-import sys, time, json, numpy as np
+import sys, os, time, json, numpy as np
 from pathlib import Path
 sys.path.insert(0, '.')
 from faceflash.pca_quantize import PCABinaryQuantizer, backend_info
@@ -340,8 +354,8 @@ DATA_DIR = Path('data')
 RESULTS_DIR = Path('results')
 RESULTS_DIR.mkdir(exist_ok=True)
 
-# Load best available data
-for name in ['vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2']:
+# Load best available data (DATA_TAG first, so MS1MV2 runs are picked up)
+for name in [os.environ.get('DATA_TAG', 'vggface2_1m'), 'vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2']:
     p = DATA_DIR / f'{name}_embeddings.npy'
     if p.exists():
         embs = np.load(p).astype(np.float32)
@@ -482,109 +496,21 @@ fi
 log ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Baselines vs the REAL ANN competitors (FAISS-Flat / HNSWLIB / USearch) at 100K,
-# single-threaded. Lets the speed claim be honest ("vs brute force" AND vs graph
-# indexes). NOTE: graph-index memory is estimated; FaceFlash/FAISS measured.
+# FULL ANN COMPARISON — FaceFlash vs FAISS-Flat/IVF, HNSWLIB, USearch, ScaNN
+# at ALL scales (100K/500K/1M). This is the definitive head-to-head benchmark.
+# Shows recall-vs-latency-vs-memory for every competitor.
 # ─────────────────────────────────────────────────────────────────────────────
-log "  Running baseline comparison (FAISS-Flat / HNSWLIB / USearch @ 100K)..."
-python << 'BASE_EOF' 2>&1 | tail -25 || true
-import sys, time, json, os, numpy as np
-from pathlib import Path
-sys.path.insert(0, '.')
-from faceflash.pca_quantize import PCABinaryQuantizer
-import faceflash_core, faiss
+log "  Running FULL ANN comparison (FAISS / HNSWLIB / USearch / ScaNN vs FaceFlash)..."
+log "  This compares ALL methods at EVERY scale — the definitive benchmark."
+log ""
 
-DATA = Path('data'); RES = Path('results'); (RES / 'runpod').mkdir(parents=True, exist_ok=True)
-emb_path = next((DATA / f'{n}_embeddings.npy' for n in
-                 ('vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2')
-                 if (DATA / f'{n}_embeddings.npy').exists()), None)
-if emb_path is None:
-    print('  no data'); sys.exit(0)
-embs = np.load(emb_path).astype(np.float32)
-labels = np.load(DATA / emb_path.name.replace('_embeddings', '_labels'), allow_pickle=True)
+# Install ScaNN if not present (only works on Linux x86_64)
+pip install -q scann 2>/dev/null || log "  (ScaNN not available on this platform — skipping)"
 
-label_to_idx = {}
-for i, l in enumerate(labels):
-    label_to_idx.setdefault(str(l), []).append(i)
-qi = []
-for idxs in label_to_idx.values():
-    if len(idxs) >= 4: qi.extend(idxs[-3:])
-    elif len(idxs) >= 2: qi.append(idxs[-1])
-qi = np.array(qi[:1000])
-mask = np.ones(len(embs), dtype=bool); mask[qi] = False
-database = np.ascontiguousarray(embs[mask][:100000])
-queries = np.ascontiguousarray(embs[qi])
-gt = np.array([np.argmax(database @ queries[i]) for i in range(len(queries))])
-n_db = len(database)
-print(f'  DB={n_db:,}  Queries={len(queries)}  (graph-index memory is ESTIMATED)')
+python benchmarks/bench_ann_comparison.py --scales 100K,500K,1M --queries 1000 2>&1 | tee -a "$LOG_FILE"
 
-faiss.omp_set_num_threads(1)
-results = []
-
-def timed(fn):
-    t, c = [], 0
-    for i in range(len(queries)):
-        t0 = time.perf_counter(); hit = fn(i); t.append((time.perf_counter() - t0) * 1000)
-        if hit == gt[i]: c += 1
-    return c / len(queries), float(np.mean(t))
-
-idx = faiss.IndexFlatIP(512); idx.add(database)
-def faiss_q(i):
-    _, I = idx.search(queries[i:i+1], 1); return int(I[0][0])
-r, ms = timed(faiss_q)
-results.append({'method': 'FAISS-Flat', 'recall_1': r, 'mean_ms': ms,
-                'memory_mb': n_db*512*4/1024/1024, 'memory_kind': 'measured'})
-print(f'  FAISS-Flat: R@1={r*100:.1f}% {ms:.3f}ms')
-
-try:
-    import hnswlib
-    hi = hnswlib.Index(space='ip', dim=512)
-    hi.init_index(max_elements=n_db, ef_construction=200, M=32)
-    hi.add_items(database, np.arange(n_db))
-    for ef in (32, 64):
-        hi.set_ef(ef)
-        def hq(i, _hi=hi):
-            lbl, _ = _hi.knn_query(queries[i:i+1], k=1); return int(lbl[0][0])
-        r, ms = timed(hq)
-        results.append({'method': f'HNSWLIB(ef={ef})', 'recall_1': r, 'mean_ms': ms,
-                        'memory_mb': n_db*512*4*1.5/1024/1024, 'memory_kind': 'estimated'})
-        print(f'  HNSWLIB ef={ef}: R@1={r*100:.1f}% {ms:.3f}ms')
-except Exception as e:
-    print(f'  HNSWLIB skipped: {e}')
-
-try:
-    from usearch.index import Index
-    ui = Index(ndim=512, metric='ip'); ui.add(np.arange(n_db), database)
-    def uq(i):
-        m = ui.search(queries[i], 1); return int(m.keys[0])
-    r, ms = timed(uq)
-    results.append({'method': 'USearch', 'recall_1': r, 'mean_ms': ms,
-                    'memory_mb': n_db*512*4*1.3/1024/1024, 'memory_kind': 'estimated'})
-    print(f'  USearch: R@1={r*100:.1f}% {ms:.3f}ms')
-except Exception as e:
-    print(f'  USearch skipped: {e}')
-
-pca = PCABinaryQuantizer(n_bits=512); pca.fit(database[:5000])
-dbc = pca.encode(database); qc = pca.encode(queries)
-for nc in (100, 300):
-    for i in range(5): faceflash_core.hamming_topk(qc[i], dbc, nc)
-    def ffq(i, _nc=nc):
-        topk = faceflash_core.hamming_topk(qc[i], dbc, _nc)
-        cand = np.asarray(topk).astype(np.intp)
-        return int(cand[np.argmax(database[cand] @ queries[i])])
-    r, ms = timed(ffq)
-    results.append({'method': f'FaceFlash(512/{nc})', 'recall_1': r, 'mean_ms': ms,
-                    'memory_mb': dbc.nbytes/1024/1024, 'memory_kind': 'measured (binary index)'})
-    print(f'  FaceFlash 512/{nc}: R@1={r*100:.1f}% {ms:.3f}ms')
-
-ts = os.environ.get('RUN_TS', 'latest')
-out = {'n_database': n_db, 'n_queries': len(queries),
-       'note': 'graph-index memory estimated; FaceFlash/FAISS measured', 'results': results}
-for p in (RES / 'bench_baselines_runpod.json', RES / 'runpod' / f'bench_baselines_{ts}.json'):
-    with open(p, 'w') as f: json.dump(out, f, indent=2)
-print('  ✓ Saved baselines (latest + timestamped)')
-BASE_EOF
-log "  ✓ Baseline comparison complete"
+log ""
+log "  ✓ Full ANN comparison complete"
 log ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -603,7 +529,7 @@ import faceflash_core
 
 DATA = Path('data'); RES = Path('results'); (RES / 'runpod').mkdir(parents=True, exist_ok=True)
 emb_path = next((DATA / f'{n}_embeddings.npy' for n in
-                 ('vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2')
+                 (os.environ.get('DATA_TAG', 'vggface2_1m'), 'vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2')
                  if (DATA / f'{n}_embeddings.npy').exists()), None)
 if emb_path is None:
     print('  no data'); sys.exit(0)
@@ -639,6 +565,84 @@ E2E_EOF
 log "  ✓ End-to-end timing complete"
 log ""
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 1:N IDENTIFICATION — the realistic test. Enroll ONE image per identity (a
+# gallery of DISTINCT people), then probe with a DIFFERENT held-out image, and
+# report rank-1 accuracy: "did it find the right PERSON among N strangers?"
+# This is the metric that needs a high-identity dataset (MS1MV2) to mean
+# anything — on few-identity data the gallery is tiny and the number is hollow.
+# ─────────────────────────────────────────────────────────────────────────────
+log "  Running 1:N identification (sparse gallery, rank-1)..."
+python << 'IDENT_EOF' 2>&1 | tail -15 || true
+import sys, os, time, json, numpy as np
+from pathlib import Path
+sys.path.insert(0, '.')
+from faceflash.pca_quantize import PCABinaryQuantizer
+import faceflash_core, faiss
+
+DATA = Path('data'); RES = Path('results'); (RES / 'runpod').mkdir(parents=True, exist_ok=True)
+emb_path = next((DATA / f'{n}_embeddings.npy' for n in
+                 (os.environ.get('DATA_TAG', 'vggface2_1m'), 'vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2')
+                 if (DATA / f'{n}_embeddings.npy').exists()), None)
+if emb_path is None:
+    print('  no data'); sys.exit(0)
+embs = np.load(emb_path).astype(np.float32)
+labels = np.load(DATA / emb_path.name.replace('_embeddings', '_labels'), allow_pickle=True)
+
+# SPARSE gallery: one image per identity; probe with a DIFFERENT image.
+by_id = {}
+for i, l in enumerate(labels):
+    by_id.setdefault(str(l), []).append(i)
+gallery_idx, probe_idx = [], []
+for idxs in by_id.values():
+    if len(idxs) >= 2:
+        gallery_idx.append(idxs[0])      # enroll first image
+        probe_idx.append(idxs[-1])       # probe with a different (last) image
+gallery = np.ascontiguousarray(embs[np.array(gallery_idx)])
+probe_idx = np.array(probe_idx[:5000])
+probes = np.ascontiguousarray(embs[probe_idx])
+truth = np.arange(len(probe_idx))        # probe j's right answer is gallery slot j
+n_id = len(gallery)
+print(f'  Gallery: {n_id:,} DISTINCT identities (1 image each) | Probes: {len(probes):,}')
+if n_id < 1000:
+    print(f'  ⚠ only {n_id} identities — switch to MS1MV2 for a meaningful 1:N test')
+
+faiss.omp_set_num_threads(1)
+out = {'n_gallery_identities': int(n_id), 'n_probes': int(len(probes)),
+       'dataset': emb_path.name,
+       'note': 'rank-1 identification: 1 image/identity gallery, different image as probe',
+       'results': []}
+
+idx = faiss.IndexFlatIP(512); idx.add(gallery)
+c = 0
+for j in range(len(probes)):
+    _, I = idx.search(probes[j:j+1], 1)
+    if int(I[0][0]) == truth[j]: c += 1
+exact = c / len(probes)
+out['results'].append({'method': 'FAISS-Flat (exact)', 'rank1': exact})
+print(f'  Exact rank-1 (ceiling): {exact*100:.1f}%')
+
+for nb, nc in ((256, 100), (512, 100), (512, 300)):
+    pca = PCABinaryQuantizer(n_bits=nb); pca.fit(gallery[:min(5000, n_id)])
+    gc = pca.encode(gallery); pc = pca.encode(probes)
+    c = 0
+    for j in range(len(probes)):
+        topk = faceflash_core.hamming_topk(pc[j], gc, min(nc, n_id))
+        cand = np.asarray(topk).astype(np.intp)
+        if int(cand[np.argmax(gallery[cand] @ probes[j])]) == truth[j]: c += 1
+    r1 = c / len(probes)
+    out['results'].append({'method': f'FaceFlash({nb}/{nc})', 'rank1': r1,
+                           'memory_mb': gc.nbytes/1024/1024})
+    print(f'  FaceFlash {nb}/{nc}: rank-1 {r1*100:.1f}%')
+
+ts = os.environ.get('RUN_TS', 'latest')
+for p in (RES / 'bench_identification_runpod.json', RES / 'runpod' / f'bench_identification_{ts}.json'):
+    with open(p, 'w') as f: json.dump(out, f, indent=2)
+print('  ✓ Saved 1:N identification (latest + timestamped)')
+IDENT_EOF
+log "  ✓ 1:N identification complete"
+log ""
+
 # ═══════════════════════════════════════════════════════════════════════════
 # STEP 6: COMMIT + PUSH RESULTS NOW (before figures — RunPod is ephemeral)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -649,7 +653,8 @@ log ""
 commit_and_push "bench: RunPod results (VGGFace2 up to 1M, real data, run ${RUN_TS})
 
 Scale sweep + granular grid (per-config recall, 95% bootstrap CIs)
-+ baselines (FAISS-Flat / HNSWLIB / USearch) + end-to-end timing.
++ FULL ANN comparison (FAISS-Flat/IVF / HNSWLIB / USearch / ScaNN)
++ end-to-end timing. All methods single-threaded, same hardware.
 Provider: $(python -c 'import onnxruntime as o; print(o.get_available_providers()[0])' 2>/dev/null || echo unknown)
 Timestamped copies under results/runpod/ (no overwrite)." results/ || true
 log ""
@@ -681,7 +686,8 @@ log ""
 log "  If the push FAILED above, copy the JSON below before stopping the pod:"
 echo "═══════════════ RESULTS (fallback copy) ═══════════════"
 for f in results/bench_nbits_grid.json results/bench_runpod.json \
-         results/bench_baselines_runpod.json results/bench_e2e_runpod.json; do
+         results/bench_ann_comparison.json results/bench_e2e_runpod.json \
+         results/bench_identification_runpod.json; do
     echo "───── $f ─────"
     cat "$f" 2>/dev/null || echo "(missing)"
 done

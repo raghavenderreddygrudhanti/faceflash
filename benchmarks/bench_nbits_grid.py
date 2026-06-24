@@ -44,8 +44,13 @@ RNG = np.random.default_rng(0)
 
 
 def load_data():
-    """Load the largest available VGGFace2 embeddings + labels (biggest scale first)."""
-    candidates = [
+    """Load the largest available embeddings + labels (DATA_TAG first, then biggest scale)."""
+    import os
+    candidates = []
+    tag = os.environ.get("DATA_TAG")
+    if tag:  # e.g. DATA_TAG=ms1m → picks up an MS1MV2 extraction
+        candidates.append((DATA_DIR / f"{tag}_embeddings.npy", DATA_DIR / f"{tag}_labels.npy"))
+    candidates += [
         (DATA_DIR / "vggface2_1m_embeddings.npy", DATA_DIR / "vggface2_1m_labels.npy"),
         (DATA_DIR / "vggface2_500k_embeddings.npy", DATA_DIR / "vggface2_500k_labels.npy"),
         (DATA_DIR / "vggface2_100k_embeddings.npy", DATA_DIR / "vggface2_100k_labels.npy"),
