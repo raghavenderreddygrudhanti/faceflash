@@ -9,5 +9,6 @@ build/
 .venv/
 rust/target/
 data/*.npy
+data/*.npz
 data/*.tgz
 data/lfw_funneled/

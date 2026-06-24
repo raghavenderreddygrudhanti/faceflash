@@ -32,6 +32,38 @@ log() {
     echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
+# RunPod is EPHEMERAL — results only survive if they reach GitHub.
+# Set GITHUB_TOKEN before running so the push works automatically:
+#   export GITHUB_TOKEN=ghp_xxx ; bash scripts/runpod_full.sh
+REMOTE_SLUG="***REMOVED***rudhanti/faceflash"
+RUN_TS="$(date +%Y%m%d_%H%M%S)"   # one timestamp for the whole run (no overwrites)
+export RUN_TS
+
+commit_and_push() {
+    # commit_and_push "<message>" <paths...>
+    local msg="$1"; shift
+    git config user.email "raghavenderreddy1212@gmail.com"
+    git config user.name "Raghavender Grudhanti"
+    git add "$@" 2>/dev/null || true
+    if git diff --cached --quiet 2>/dev/null; then
+        log "  (nothing new to commit)"
+        return 0
+    fi
+    git commit -q -m "$msg" || { log "  ⚠ commit failed"; return 1; }
+    if [ -n "$GITHUB_TOKEN" ]; then
+        git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REMOTE_SLUG}.git"
+    fi
+    if git push origin HEAD:main; then
+        log "  ✓ Pushed to GitHub — results are safe even after this pod is destroyed"
+        return 0
+    fi
+    log "  ✗✗✗ PUSH FAILED — results are committed LOCALLY but NOT on GitHub."
+    log "      RunPod is ephemeral: stopping the pod now will LOSE these results."
+    log "      Fix: export GITHUB_TOKEN=<token> and re-run, or copy the JSON"
+    log "      printed at the end of this log before stopping the pod."
+    return 1
+}
+
 log "═══════════════════════════════════════════════════════════════"
 log "  FaceFlash — RunPod Complete Pipeline"
 log "═══════════════════════════════════════════════════════════════"
@@ -195,6 +227,20 @@ if 'CUDA' in provider:
 else:
     print(f'  ⚠ Running on CPU (slower, ~3 img/s vs ~1000 img/s on GPU)')
 
+# Fail fast if the label field is missing — otherwise every image gets a unique
+# label and the recall benchmark silently breaks (no identity has >=2 images).
+probe = next(iter(ds))
+LABEL_FIELD = next((c for c in ('class_id', 'label', 'identity', 'person_id', 'id')
+                    if c in probe), None)
+if LABEL_FIELD is None:
+    print(f'  ERROR: no known label field in dataset. Available keys: {list(probe.keys())}')
+    print(f'  Edit the script to use the correct field, then re-run.')
+    sys.exit(1)
+if 'image' not in probe:
+    print(f'  ERROR: no "image" field. Available keys: {list(probe.keys())}')
+    sys.exit(1)
+print(f'  Label field: {LABEL_FIELD}')
+
 failed = 0
 t_start = time.perf_counter()
 
@@ -211,7 +257,7 @@ for i, sample in enumerate(tqdm(ds, total=TARGET, initial=start_count, desc='  E
         face = img_np[mh:h-mh, mw:w-mw]
         emb = embedder.embed(face)
         embeddings_list.append(emb)
-        labels_list.append(sample.get('class_id', i))
+        labels_list.append(sample.get(LABEL_FIELD, i))
     except Exception:
         failed += 1
 
@@ -402,65 +448,77 @@ for scale_name, n_db in scales:
     }
 
 # Save
-with open(RESULTS_DIR / 'bench_runpod.json', 'w') as f:
-    json.dump(all_results, f, indent=2)
-print(f'\n  ✓ Saved: results/bench_runpod.json')
+import os
+run_ts = os.environ.get('RUN_TS', 'latest')
+(RESULTS_DIR / 'runpod').mkdir(parents=True, exist_ok=True)
+for _p in (RESULTS_DIR / 'bench_runpod.json',
+           RESULTS_DIR / 'runpod' / f'bench_scale_{run_ts}.json'):
+    with open(_p, 'w') as f:
+        json.dump(all_results, f, indent=2)
+print(f'  ✓ Saved scale results: latest + runpod/bench_scale_{run_ts}.json')
 BENCH_EOF
 
 log ""
-log "  ✓ Benchmarks complete"
+log "  ✓ Scale benchmark complete"
+log ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Granular, CI-backed benchmark (the trusted one). Auto-loads the largest data
+# available (1M if extracted): per-config recall with 95% bootstrap CIs.
+# ─────────────────────────────────────────────────────────────────────────────
+log "  Running granular grid benchmark (per-config recall + 95% CIs)..."
+rm -f results/bench_nbits_grid.json
+python benchmarks/bench_nbits_grid.py --queries 1000 2>&1 | tail -45 || true
+if [ -f results/bench_nbits_grid.json ]; then
+    cp results/bench_nbits_grid.json "results/runpod/bench_grid_${RUN_TS}.json"
+    log "  ✓ Granular results: latest + runpod/bench_grid_${RUN_TS}.json"
+else
+    log "  ⚠ Grid benchmark produced no output (scale results still saved)"
+fi
 log ""
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STEP 6: GENERATE FIGURES
+# STEP 6: COMMIT + PUSH RESULTS NOW (before figures — RunPod is ephemeral)
 # ═══════════════════════════════════════════════════════════════════════════
 log "┌─────────────────────────────────────────────────────────────┐"
-log "│ STEP 6/7: Generating publication figures                    │"
+log "│ STEP 6/7: Commit + push results (doing this ASAP)           │"
 log "└─────────────────────────────────────────────────────────────┘"
 log ""
+commit_and_push "bench: RunPod results (VGGFace2 up to 1M, real data, run ${RUN_TS})
 
-python scripts/plot_figures.py 2>/dev/null && log "  ✓ Figures generated" || log "  ⚠ Figure generation failed (non-critical)"
+Scale sweep + granular grid (per-config recall with 95% bootstrap CIs).
+Provider: $(python -c 'import onnxruntime as o; print(o.get_available_providers()[0])' 2>/dev/null || echo unknown)
+Timestamped copies under results/runpod/ (no overwrite)." results/ || true
 log ""
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STEP 7: PUSH RESULTS TO GITHUB
+# STEP 7: FIGURES (optional) + result safety dump
 # ═══════════════════════════════════════════════════════════════════════════
 log "┌─────────────────────────────────────────────────────────────┐"
-log "│ STEP 7/7: Pushing results to GitHub                         │"
+log "│ STEP 7/7: Figures (optional) + result safety dump           │"
 log "└─────────────────────────────────────────────────────────────┘"
 log ""
-log "  Files to push:"
-log "    - results/bench_runpod.json (benchmark numbers)"
-log "    - docs/figures/*.png (charts)"
-log ""
-
-git config user.email "raghavenderreddy1212@gmail.com"
-git config user.name "Raghavender Grudhanti"
-git add results/ docs/figures/ 2>/dev/null || true
-git commit -m "bench: RunPod 1M-scale results (VGGFace2, real data)
-
-Dataset: VGGFace2 streamed from HuggingFace
-Scale: up to 1M real face embeddings
-Hardware: $(python -c 'import torch; print(torch.cuda.get_device_name(0))' 2>/dev/null || echo 'CPU-only')
-Provider: $(python -c 'import onnxruntime; print(onnxruntime.get_available_providers()[0])' 2>/dev/null || echo 'unknown')
-" 2>/dev/null || log "  Nothing new to commit"
-
-git push 2>/dev/null || log "  ⚠ Push failed. To enable, run:"
-log "    git remote set-url origin https://<YOUR_TOKEN>@github.com/***REMOVED***rudhanti/faceflash.git"
+if python scripts/plot_figures.py 2>/dev/null; then
+    commit_and_push "docs: refresh figures from RunPod run ${RUN_TS}" docs/figures/ || true
+else
+    log "  ⚠ Figure generation skipped (non-critical)"
+fi
 log ""
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SUMMARY
+# SUMMARY — dump results to the log as a last-resort fallback
 # ═══════════════════════════════════════════════════════════════════════════
 log "═══════════════════════════════════════════════════════════════"
 log "  PIPELINE COMPLETE"
 log "═══════════════════════════════════════════════════════════════"
 log ""
-log "  Results: results/bench_runpod.json"
-log "  Figures: docs/figures/"
-log "  Log:     $LOG_FILE"
+log "  Saved under results/ and results/runpod/ (timestamped, never overwritten)"
+log "  Log: $LOG_FILE"
 log ""
-log "  To view results:"
-log "    cat results/bench_runpod.json"
-log ""
-cat results/bench_runpod.json
+log "  If the push FAILED above, copy the JSON below before stopping the pod:"
+echo "═══════════════ RESULTS (fallback copy) ═══════════════"
+for f in results/bench_nbits_grid.json results/bench_runpod.json; do
+    echo "───── $f ─────"
+    cat "$f" 2>/dev/null || echo "(missing)"
+done
+echo "═══════════════════════════════════════════════════════"
