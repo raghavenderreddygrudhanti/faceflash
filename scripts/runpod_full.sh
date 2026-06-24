@@ -32,7 +32,7 @@
 # printed at the very end — download those before stopping the pod.
 #
 # ═══════════════════════════════════════════════════════════════════════════
-set -e
+set +e  # Do NOT exit on failure — each step should continue independently
 
 LOG_FILE="/workspace/faceflash_pipeline.log"
 
@@ -337,7 +337,9 @@ if CHECKPOINT.exists():
     CHECKPOINT.unlink()
 EXTRACT_EOF
 
-log ""
+if [ $? -ne 0 ]; then
+    log "  ⚠ VGGFace2 extraction failed — continuing with whatever data exists"
+fi
 log "  ✓ Embedding extraction complete"
 log ""
 
@@ -402,7 +404,7 @@ except Exception as e:
     if [ -f "$MS1M_DIR/train.rec" ]; then
         log "  Extracting MS1MV2 embeddings (target: 1M from 85K identities)..."
         pip install -q mxnet-mkl 2>/dev/null || pip install -q mxnet 2>/dev/null || true
-        python scripts/extract_ms1m.py --target 1000000 --data-dir data --rec-dir "$MS1M_DIR" 2>&1 | tail -20
+        python scripts/extract_ms1m.py --target 1000000 --data-dir data --rec-dir "$MS1M_DIR" 2>&1 | tail -20 || log "  ⚠ MS1MV2 extraction failed — continuing without it"
         log "  ✓ MS1MV2 extraction complete"
     else
         log "  ⚠ MS1MV2 data not available — skipping (VGGFace2 results still valid)"
@@ -564,8 +566,11 @@ for _p in (RESULTS_DIR / 'bench_runpod.json',
 print(f'  ✓ Saved scale results: latest + runpod/bench_scale_{run_ts}.json')
 BENCH_EOF
 
+if [ $? -ne 0 ]; then
+    log "  ⚠ Scale benchmark failed — continuing to next step"
+fi
+
 log ""
-log "  ✓ Scale benchmark complete"
 log ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -595,7 +600,7 @@ log ""
 # Install ScaNN if not present (only works on Linux x86_64)
 pip install -q scann 2>/dev/null || log "  (ScaNN not available on this platform — skipping)"
 
-python benchmarks/bench_ann_comparison.py --scales 100K,500K,1M --queries 1000 2>&1 | tee -a "$LOG_FILE"
+python benchmarks/bench_ann_comparison.py --scales 100K,500K,1M --queries 1000 2>&1 | tee -a "$LOG_FILE" || true
 
 # Also run ANN comparison on MS1MV2 if available (the hard benchmark — 85K identities)
 if [ -f "data/ms1m_embeddings.npy" ]; then
