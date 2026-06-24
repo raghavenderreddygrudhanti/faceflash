@@ -340,6 +340,76 @@ log "  ✓ Embedding extraction complete"
 log ""
 
 # ═══════════════════════════════════════════════════════════════════════════
+# STEP 4b: EXTRACT MS1MV2 EMBEDDINGS (85K identities — the hard benchmark)
+# ═══════════════════════════════════════════════════════════════════════════
+log "┌─────────────────────────────────────────────────────────────┐"
+log "│ STEP 4b/7: MS1MV2 (85K identities, industry standard)       │"
+log "└─────────────────────────────────────────────────────────────┘"
+log ""
+log "  MS1MV2 = MS-Celeb-1M cleaned by InsightFace (faces_emore)"
+log "  85,742 distinct identities — the REAL benchmark for 1:N search"
+log "  Format: MXNet RecordIO (.rec), images pre-aligned 112x112"
+log "  Source: Kaggle (ms1m-arcface-dataset)"
+log ""
+
+MS1M_DIR="data/ms1m"
+MS1M_OUT="data/ms1m_embeddings.npy"
+
+if [ -f "$MS1M_OUT" ]; then
+    log "  ✓ MS1MV2 embeddings already extracted — skipping"
+else
+    # Download MS1MV2 from Kaggle (requires KAGGLE_USERNAME + KAGGLE_KEY)
+    # OR from a direct link if available
+    mkdir -p "$MS1M_DIR"
+
+    if [ -f "$MS1M_DIR/train.rec" ]; then
+        log "  ✓ MS1MV2 .rec file already present"
+    else
+        # Try Kaggle API
+        if command -v kaggle &>/dev/null || pip install -q kaggle 2>/dev/null; then
+            if [ -n "$KAGGLE_USERNAME" ] && [ -n "$KAGGLE_KEY" ]; then
+                log "  Downloading MS1MV2 from Kaggle..."
+                kaggle datasets download -d debarghamitraroy/ms1m-arcface-dataset -p "$MS1M_DIR" --unzip 2>&1 | tail -5 || true
+            else
+                log "  ⚠ KAGGLE_USERNAME/KAGGLE_KEY not set"
+                log "    To include MS1MV2, set these env vars before running:"
+                log "    export KAGGLE_USERNAME=your_username KAGGLE_KEY=your_key"
+            fi
+        fi
+
+        # Alternative: direct download from known mirrors
+        if [ ! -f "$MS1M_DIR/train.rec" ]; then
+            log "  Trying alternative download (OneDrive/HuggingFace mirrors)..."
+            # Try HuggingFace deepghs mirror
+            python -c "
+from huggingface_hub import hf_hub_download
+import os
+try:
+    path = hf_hub_download('deepghs/insightface', 'faces_emore/train.rec',
+                           repo_type='model', local_dir='$MS1M_DIR')
+    print(f'  Downloaded: {path}')
+    path = hf_hub_download('deepghs/insightface', 'faces_emore/train.idx',
+                           repo_type='model', local_dir='$MS1M_DIR')
+    print(f'  Downloaded: {path}')
+except Exception as e:
+    print(f'  Download failed: {e}')
+" 2>&1 | tail -5 || true
+        fi
+    fi
+
+    if [ -f "$MS1M_DIR/train.rec" ]; then
+        log "  Extracting MS1MV2 embeddings (target: 1M from 85K identities)..."
+        pip install -q mxnet-mkl 2>/dev/null || pip install -q mxnet 2>/dev/null || true
+        python scripts/extract_ms1m.py --target 1000000 --data-dir data --rec-dir "$MS1M_DIR" 2>&1 | tail -20
+        log "  ✓ MS1MV2 extraction complete"
+    else
+        log "  ⚠ MS1MV2 data not available — skipping (VGGFace2 results still valid)"
+        log "    To get MS1MV2: export KAGGLE_USERNAME=x KAGGLE_KEY=y before running"
+    fi
+fi
+log ""
+
+# ═══════════════════════════════════════════════════════════════════════════
 # STEP 5: RUN BENCHMARKS AT MULTIPLE SCALES
 # ═══════════════════════════════════════════════════════════════════════════
 log "┌─────────────────────────────────────────────────────────────┐"
@@ -524,6 +594,18 @@ log ""
 pip install -q scann 2>/dev/null || log "  (ScaNN not available on this platform — skipping)"
 
 python benchmarks/bench_ann_comparison.py --scales 100K,500K,1M --queries 1000 2>&1 | tee -a "$LOG_FILE"
+
+# Also run ANN comparison on MS1MV2 if available (the hard benchmark — 85K identities)
+if [ -f "data/ms1m_embeddings.npy" ]; then
+    log ""
+    log "  Running ANN comparison on MS1MV2 (85K identities — the hard benchmark)..."
+    python benchmarks/bench_ann_comparison.py --scales 100K,500K,1M --queries 1000 \
+        --data-tag ms1m 2>&1 | tee -a "$LOG_FILE" || true
+fi
+
+log ""
+log "  ✓ Full ANN comparison complete"
+log ""
 
 log ""
 log "  ✓ Full ANN comparison complete"
@@ -717,8 +799,8 @@ echo "       ${FIGURES_DIR_ABS}"
 echo ""
 echo "   Result files produced:"
 for f in results/bench_runpod.json results/bench_nbits_grid.json \
-         results/bench_ann_comparison.json results/bench_e2e_runpod.json \
-         results/bench_identification_runpod.json; do
+         results/bench_ann_comparison.json results/bench_ann_comparison_ms1m.json \
+         results/bench_e2e_runpod.json; do
     [ -f "$f" ] && echo "       ✓ ${f}" || echo "       ✗ ${f} (not produced)"
 done
 echo ""

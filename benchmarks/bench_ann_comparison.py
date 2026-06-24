@@ -82,7 +82,7 @@ def load_data():
     """Load the largest available embedding file (DATA_TAG first, e.g. MS1MV2)."""
     import os
     tag = os.environ.get('DATA_TAG')
-    names = ([tag] if tag else []) + ['vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2']
+    names = ([tag] if tag else []) + ['ms1m', 'vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2']
     for name in names:
         emb_path = DATA_DIR / f'{name}_embeddings.npy'
         lbl_path = DATA_DIR / f'{name}_labels.npy'
@@ -474,7 +474,13 @@ def main():
                         help="Comma-separated scales to test (default: 100K,500K,1M)")
     parser.add_argument("--queries", type=int, default=1000,
                         help="Number of queries (default: 1000)")
+    parser.add_argument("--data-tag", default=None,
+                        help="Dataset tag to load (e.g. 'ms1m', 'vggface2_1m')")
     args = parser.parse_args()
+
+    # Set DATA_TAG env so load_data() picks it up
+    if args.data_tag:
+        os.environ['DATA_TAG'] = args.data_tag
 
     requested_scales = [s.strip() for s in args.scales.split(",")]
     scale_map = {"100K": 100000, "500K": 500000, "1M": 1000000}
@@ -567,8 +573,10 @@ def main():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     run_ts = os.environ.get("RUN_TS", time.strftime("%Y%m%d_%H%M%S"))
-    out_latest = RESULTS_DIR / "bench_ann_comparison.json"
-    out_ts = RESULTS_DIR / "runpod" / f"bench_ann_{run_ts}.json"
+    data_tag = os.environ.get("DATA_TAG", "")
+    tag_suffix = f"_{data_tag}" if data_tag else ""
+    out_latest = RESULTS_DIR / f"bench_ann_comparison{tag_suffix}.json"
+    out_ts = RESULTS_DIR / "runpod" / f"bench_ann{tag_suffix}_{run_ts}.json"
     out_ts.parent.mkdir(parents=True, exist_ok=True)
 
     for p in (out_latest, out_ts):
