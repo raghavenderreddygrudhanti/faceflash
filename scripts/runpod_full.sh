@@ -89,6 +89,9 @@ else
 fi
 cd faceflash
 
+log "  Creating virtual environment..."
+python -m venv .venv
+source .venv/bin/activate
 log "  Installing Python packages..."
 log "    - numpy, pillow, tqdm (core)"
 log "    - onnxruntime-gpu (GPU-accelerated face embedding)"
