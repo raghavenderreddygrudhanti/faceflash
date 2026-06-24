@@ -18,12 +18,14 @@
 #   - 50GB+ disk space
 #   - ~60-90 minutes total runtime
 #
-# HOW TO USE — ONE command on a fresh RunPod terminal:
+# HOW TO USE — this is a PRIVATE repo, so a GitHub token is REQUIRED
+# (create one at GitHub → Settings → Developer settings → Personal access
+#  tokens; classic token with scope "repo"). Then ONE command on the pod:
 #
-#   curl -sSL https://raw.githubusercontent.com/***REMOVED***rudhanti/faceflash/main/scripts/runpod_full.sh -o /tmp/run.sh && bash /tmp/run.sh
+#   export GITHUB_TOKEN=ghp_your_token_here
+#   git clone https://${GITHUB_TOKEN}@github.com/***REMOVED***rudhanti/faceflash.git /workspace/faceflash && bash /workspace/faceflash/scripts/runpod_full.sh
 #
-#   (optional, to also auto-push to GitHub: `export GITHUB_TOKEN=ghp_xxx` first)
-#   (optional, to use MS1MV2: `export DATASET=<repo> DATA_TAG=ms1m` first)
+#   (optional, to use MS1MV2: also `export DATASET=<repo> DATA_TAG=ms1m`)
 #
 # It installs everything, builds, downloads models, extracts, benchmarks, and
 # bundles all results. The absolute results FOLDER + a single .tar.gz path are
@@ -100,7 +102,13 @@ cd "$WORKDIR"
 log "  Working directory: $WORKDIR"
 if [ ! -d "faceflash" ]; then
     log "  Cloning repository from GitHub..."
-    git clone https://github.com/***REMOVED***rudhanti/faceflash.git
+    if [ -n "$GITHUB_TOKEN" ]; then
+        git clone "https://${GITHUB_TOKEN}@github.com/${REMOTE_SLUG}.git"
+    else
+        log "  ⚠ No GITHUB_TOKEN set — this fails on a PRIVATE repo."
+        log "    Run: export GITHUB_TOKEN=ghp_xxx   (scope: repo)"
+        git clone "https://github.com/${REMOTE_SLUG}.git"
+    fi
     log "  ✓ Repository cloned"
 else
     log "  Repository already exists, pulling latest..."
