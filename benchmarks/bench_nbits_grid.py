@@ -44,25 +44,41 @@ RNG = np.random.default_rng(0)
 
 
 def load_data():
-    """Load the largest available VGGFace2 embeddings + labels."""
+    """Load the largest available VGGFace2 embeddings + labels (biggest scale first)."""
     candidates = [
+        (DATA_DIR / "vggface2_1m_embeddings.npy", DATA_DIR / "vggface2_1m_labels.npy"),
+        (DATA_DIR / "vggface2_500k_embeddings.npy", DATA_DIR / "vggface2_500k_labels.npy"),
         (DATA_DIR / "vggface2_100k_embeddings.npy", DATA_DIR / "vggface2_100k_labels.npy"),
         (DATA_DIR / "vggface2_embeddings.npy", DATA_DIR / "vggface2_labels.npy"),
     ]
     for emb_path, lbl_path in candidates:
         if emb_path.exists() and lbl_path.exists():
-            embs = np.load(emb_path).astype(np.float32)
+            embs = np.load(emb_path)
+            if embs.dtype != np.float32:  # avoid a 2 GB copy at 1M scale
+                embs = embs.astype(np.float32)
             labels = np.load(lbl_path, allow_pickle=True)
             return embs, labels, emb_path.name
     raise FileNotFoundError("No VGGFace2 embeddings found in data/. Run extraction first.")
 
 
-def split_query_database(embs, labels, max_queries=300):
-    """Hold out the last image of each multi-image identity as a query."""
+def split_query_database(embs, labels, max_queries=1000, per_identity=3):
+    """Hold out the last `per_identity` images of each multi-image identity as queries.
+
+    Holding out up to 3 per identity (not just 1) yields enough queries for tight
+    confidence intervals at any scale (~800+ at 100K, more at 1M). Always keeps at
+    least one image of each held-out identity in the database, so the query has a
+    true match to find.
+    """
     label_to_idx = {}
     for i, l in enumerate(labels):
         label_to_idx.setdefault(str(l), []).append(i)
-    qi = np.array([idxs[-1] for idxs in label_to_idx.values() if len(idxs) >= 2][:max_queries])
+    qi = []
+    for idxs in label_to_idx.values():
+        if len(idxs) >= per_identity + 1:
+            qi.extend(idxs[-per_identity:])
+        elif len(idxs) >= 2:
+            qi.append(idxs[-1])
+    qi = np.array(qi[:max_queries])
     mask = np.ones(len(embs), dtype=bool)
     mask[qi] = False
     database = np.ascontiguousarray(embs[mask])
@@ -118,7 +134,7 @@ def main():
                     help="comma-separated bit widths")
     ap.add_argument("--cands", default="10,30,50,100,200,300,500",
                     help="comma-separated candidate counts")
-    ap.add_argument("--queries", type=int, default=300)
+    ap.add_argument("--queries", type=int, default=1000)
     args = ap.parse_args()
 
     bit_widths = [int(b) for b in args.bits.split(",")]
@@ -132,8 +148,11 @@ def main():
     print(f"Source: {src}  |  database={n_db:,}  queries={n_q}  dim={dim}")
     print(f"Timing: best-of-{TIMING_REPEATS} per query   Bootstrap: {N_BOOTSTRAP} resamples")
 
-    # Ground truth = exact cosine NN (batched matmul)
-    gt = (database @ queries.T).argmax(axis=0)  # (n_q,)
+    # Ground truth = exact cosine NN, chunked over queries to bound memory at 1M
+    # (a full (n_db x n_q) matrix would be ~4 GB at 1M; chunks keep it small).
+    gt = np.empty(n_q, dtype=np.int64)
+    for s in range(0, n_q, 200):
+        gt[s:s + 200] = (database @ queries[s:s + 200].T).argmax(axis=0)
 
     faiss_ms = faiss_baseline_ms(database, queries)
     if faiss_ms:
