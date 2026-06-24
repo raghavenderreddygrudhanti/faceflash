@@ -25,14 +25,22 @@ def ensure_model():
 
 
 class FaceEmbedder:
-    """ArcFace embedding model (ONNX, runs on CPU)."""
+    """ArcFace embedding model (ONNX). Uses GPU if available, else CPU."""
 
     def __init__(self):
         import onnxruntime as ort
         model_path = ensure_model()
+        # Prefer GPU → CPU fallback
+        available = ort.get_available_providers()
+        if "CUDAExecutionProvider" in available:
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        elif "CoreMLExecutionProvider" in available:
+            providers = ["CoreMLExecutionProvider", "CPUExecutionProvider"]
+        else:
+            providers = ["CPUExecutionProvider"]
         self.session = ort.InferenceSession(
             str(model_path),
-            providers=["CPUExecutionProvider"]
+            providers=providers
         )
         self.input_name = self.session.get_inputs()[0].name
         self.input_shape = self.session.get_inputs()[0].shape  # [1, 3, 112, 112]
