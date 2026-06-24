@@ -8,9 +8,10 @@
 #   Step 2: Build the Rust POPCNT backend (faceflash_core)
 #   Step 3: Download ArcFace model (~166MB) for face embedding
 #   Step 4: Stream VGGFace2 from HuggingFace and extract 1M face embeddings
-#   Step 5: Run benchmarks at 100K, 500K, 1M scale
-#   Step 6: Generate publication figures (PNG)
-#   Step 7: Push all results + figures to GitHub
+#   Step 5: Benchmarks — scale sweep (100K/500K/1M) + granular grid (CIs)
+#           + baselines (FAISS-Flat / HNSWLIB / USearch) + end-to-end timing
+#   Step 6: Commit + push results to GitHub (timestamped, no overwrite)
+#   Step 7: Figures + result safety dump
 #
 # REQUIREMENTS:
 #   - RunPod with GPU (A100/4090/3090 recommended)
@@ -95,11 +96,11 @@ source .venv/bin/activate
 log "  Installing Python packages..."
 log "    - numpy, pillow, tqdm (core)"
 log "    - onnxruntime-gpu (GPU-accelerated face embedding)"
-log "    - faiss-cpu (baseline comparison)"
+log "    - faiss-cpu, hnswlib, usearch (baseline comparison)"
 log "    - datasets, huggingface-hub (data streaming)"
 log "    - maturin (Rust→Python bridge)"
 log "    - matplotlib (figures)"
-pip install -q numpy onnxruntime-gpu pillow tqdm faiss-cpu datasets huggingface-hub maturin matplotlib 2>&1 | tail -3
+pip install -q numpy onnxruntime-gpu pillow tqdm faiss-cpu hnswlib usearch datasets huggingface-hub maturin matplotlib 2>&1 | tail -3
 log "  ✓ All Python packages installed"
 log ""
 
@@ -480,6 +481,164 @@ else
 fi
 log ""
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Baselines vs the REAL ANN competitors (FAISS-Flat / HNSWLIB / USearch) at 100K,
+# single-threaded. Lets the speed claim be honest ("vs brute force" AND vs graph
+# indexes). NOTE: graph-index memory is estimated; FaceFlash/FAISS measured.
+# ─────────────────────────────────────────────────────────────────────────────
+log "  Running baseline comparison (FAISS-Flat / HNSWLIB / USearch @ 100K)..."
+python << 'BASE_EOF' 2>&1 | tail -25 || true
+import sys, time, json, os, numpy as np
+from pathlib import Path
+sys.path.insert(0, '.')
+from faceflash.pca_quantize import PCABinaryQuantizer
+import faceflash_core, faiss
+
+DATA = Path('data'); RES = Path('results'); (RES / 'runpod').mkdir(parents=True, exist_ok=True)
+emb_path = next((DATA / f'{n}_embeddings.npy' for n in
+                 ('vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2')
+                 if (DATA / f'{n}_embeddings.npy').exists()), None)
+if emb_path is None:
+    print('  no data'); sys.exit(0)
+embs = np.load(emb_path).astype(np.float32)
+labels = np.load(DATA / emb_path.name.replace('_embeddings', '_labels'), allow_pickle=True)
+
+label_to_idx = {}
+for i, l in enumerate(labels):
+    label_to_idx.setdefault(str(l), []).append(i)
+qi = []
+for idxs in label_to_idx.values():
+    if len(idxs) >= 4: qi.extend(idxs[-3:])
+    elif len(idxs) >= 2: qi.append(idxs[-1])
+qi = np.array(qi[:1000])
+mask = np.ones(len(embs), dtype=bool); mask[qi] = False
+database = np.ascontiguousarray(embs[mask][:100000])
+queries = np.ascontiguousarray(embs[qi])
+gt = np.array([np.argmax(database @ queries[i]) for i in range(len(queries))])
+n_db = len(database)
+print(f'  DB={n_db:,}  Queries={len(queries)}  (graph-index memory is ESTIMATED)')
+
+faiss.omp_set_num_threads(1)
+results = []
+
+def timed(fn):
+    t, c = [], 0
+    for i in range(len(queries)):
+        t0 = time.perf_counter(); hit = fn(i); t.append((time.perf_counter() - t0) * 1000)
+        if hit == gt[i]: c += 1
+    return c / len(queries), float(np.mean(t))
+
+idx = faiss.IndexFlatIP(512); idx.add(database)
+def faiss_q(i):
+    _, I = idx.search(queries[i:i+1], 1); return int(I[0][0])
+r, ms = timed(faiss_q)
+results.append({'method': 'FAISS-Flat', 'recall_1': r, 'mean_ms': ms,
+                'memory_mb': n_db*512*4/1024/1024, 'memory_kind': 'measured'})
+print(f'  FAISS-Flat: R@1={r*100:.1f}% {ms:.3f}ms')
+
+try:
+    import hnswlib
+    hi = hnswlib.Index(space='ip', dim=512)
+    hi.init_index(max_elements=n_db, ef_construction=200, M=32)
+    hi.add_items(database, np.arange(n_db))
+    for ef in (32, 64):
+        hi.set_ef(ef)
+        def hq(i, _hi=hi):
+            lbl, _ = _hi.knn_query(queries[i:i+1], k=1); return int(lbl[0][0])
+        r, ms = timed(hq)
+        results.append({'method': f'HNSWLIB(ef={ef})', 'recall_1': r, 'mean_ms': ms,
+                        'memory_mb': n_db*512*4*1.5/1024/1024, 'memory_kind': 'estimated'})
+        print(f'  HNSWLIB ef={ef}: R@1={r*100:.1f}% {ms:.3f}ms')
+except Exception as e:
+    print(f'  HNSWLIB skipped: {e}')
+
+try:
+    from usearch.index import Index
+    ui = Index(ndim=512, metric='ip'); ui.add(np.arange(n_db), database)
+    def uq(i):
+        m = ui.search(queries[i], 1); return int(m.keys[0])
+    r, ms = timed(uq)
+    results.append({'method': 'USearch', 'recall_1': r, 'mean_ms': ms,
+                    'memory_mb': n_db*512*4*1.3/1024/1024, 'memory_kind': 'estimated'})
+    print(f'  USearch: R@1={r*100:.1f}% {ms:.3f}ms')
+except Exception as e:
+    print(f'  USearch skipped: {e}')
+
+pca = PCABinaryQuantizer(n_bits=512); pca.fit(database[:5000])
+dbc = pca.encode(database); qc = pca.encode(queries)
+for nc in (100, 300):
+    for i in range(5): faceflash_core.hamming_topk(qc[i], dbc, nc)
+    def ffq(i, _nc=nc):
+        topk = faceflash_core.hamming_topk(qc[i], dbc, _nc)
+        cand = np.asarray(topk).astype(np.intp)
+        return int(cand[np.argmax(database[cand] @ queries[i])])
+    r, ms = timed(ffq)
+    results.append({'method': f'FaceFlash(512/{nc})', 'recall_1': r, 'mean_ms': ms,
+                    'memory_mb': dbc.nbytes/1024/1024, 'memory_kind': 'measured (binary index)'})
+    print(f'  FaceFlash 512/{nc}: R@1={r*100:.1f}% {ms:.3f}ms')
+
+ts = os.environ.get('RUN_TS', 'latest')
+out = {'n_database': n_db, 'n_queries': len(queries),
+       'note': 'graph-index memory estimated; FaceFlash/FAISS measured', 'results': results}
+for p in (RES / 'bench_baselines_runpod.json', RES / 'runpod' / f'bench_baselines_{ts}.json'):
+    with open(p, 'w') as f: json.dump(out, f, indent=2)
+print('  ✓ Saved baselines (latest + timestamped)')
+BASE_EOF
+log "  ✓ Baseline comparison complete"
+log ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# End-to-end pipeline timing (detect → embed → encode → search).
+# NOTE: synthetic images — measures STAGE LATENCY, not detection accuracy.
+# ─────────────────────────────────────────────────────────────────────────────
+log "  Running end-to-end timing (detect → embed → encode → search)..."
+python << 'E2E_EOF' 2>&1 | tail -12 || true
+import sys, time, json, os, numpy as np
+from pathlib import Path
+sys.path.insert(0, '.')
+from faceflash.detect import detect_and_align
+from faceflash.embed import FaceEmbedder
+from faceflash.pca_quantize import PCABinaryQuantizer
+import faceflash_core
+
+DATA = Path('data'); RES = Path('results'); (RES / 'runpod').mkdir(parents=True, exist_ok=True)
+emb_path = next((DATA / f'{n}_embeddings.npy' for n in
+                 ('vggface2_1m', 'vggface2_500k', 'vggface2_100k', 'vggface2')
+                 if (DATA / f'{n}_embeddings.npy').exists()), None)
+if emb_path is None:
+    print('  no data'); sys.exit(0)
+embs = np.load(emb_path).astype(np.float32)[:100000]
+pca = PCABinaryQuantizer(n_bits=512); pca.fit(embs[:5000]); dbc = pca.encode(embs)
+embedder = FaceEmbedder()
+print(f'  Provider: {embedder.session.get_providers()[0]}')
+
+rng = np.random.default_rng(42)
+imgs = [rng.integers(0, 255, (250, 250, 3), dtype=np.uint8) for _ in range(50)]
+td, te, tc, tsr, tt = [], [], [], [], []
+for img in imgs:
+    t0 = time.perf_counter(); face = detect_and_align(img); td.append((time.perf_counter()-t0)*1000)
+    t1 = time.perf_counter(); emb = embedder.embed(face); te.append((time.perf_counter()-t1)*1000)
+    t2 = time.perf_counter(); qc = pca.encode(emb.reshape(1, -1)).ravel(); tc.append((time.perf_counter()-t2)*1000)
+    t3 = time.perf_counter()
+    topk = faceflash_core.hamming_topk(qc, dbc, 100); cand = np.asarray(topk).astype(np.intp); _ = embs[cand] @ emb
+    tsr.append((time.perf_counter()-t3)*1000)
+    tt.append((time.perf_counter()-t0)*1000)
+
+def stat(x): return {'mean': float(np.mean(x)), 'p99': float(np.percentile(x, 99))}
+out = {'note': 'synthetic images — stage latency only, not detection accuracy',
+       'provider': embedder.session.get_providers()[0], 'n_database': len(embs),
+       'detect_ms': stat(td), 'embed_ms': stat(te), 'encode_ms': stat(tc),
+       'search_ms': stat(tsr), 'total_ms': stat(tt), 'fps': 1000.0 / float(np.mean(tt))}
+print(f'  detect {out["detect_ms"]["mean"]:.1f} | embed {out["embed_ms"]["mean"]:.1f} | '
+      f'search {out["search_ms"]["mean"]:.3f} | total {out["total_ms"]["mean"]:.1f}ms ({out["fps"]:.0f} FPS)')
+ts = os.environ.get('RUN_TS', 'latest')
+for p in (RES / 'bench_e2e_runpod.json', RES / 'runpod' / f'bench_e2e_{ts}.json'):
+    with open(p, 'w') as f: json.dump(out, f, indent=2)
+print('  ✓ Saved e2e timing (latest + timestamped)')
+E2E_EOF
+log "  ✓ End-to-end timing complete"
+log ""
+
 # ═══════════════════════════════════════════════════════════════════════════
 # STEP 6: COMMIT + PUSH RESULTS NOW (before figures — RunPod is ephemeral)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -489,7 +648,8 @@ log "└────────────────────────
 log ""
 commit_and_push "bench: RunPod results (VGGFace2 up to 1M, real data, run ${RUN_TS})
 
-Scale sweep + granular grid (per-config recall with 95% bootstrap CIs).
+Scale sweep + granular grid (per-config recall, 95% bootstrap CIs)
++ baselines (FAISS-Flat / HNSWLIB / USearch) + end-to-end timing.
 Provider: $(python -c 'import onnxruntime as o; print(o.get_available_providers()[0])' 2>/dev/null || echo unknown)
 Timestamped copies under results/runpod/ (no overwrite)." results/ || true
 log ""
@@ -520,7 +680,8 @@ log "  Log: $LOG_FILE"
 log ""
 log "  If the push FAILED above, copy the JSON below before stopping the pod:"
 echo "═══════════════ RESULTS (fallback copy) ═══════════════"
-for f in results/bench_nbits_grid.json results/bench_runpod.json; do
+for f in results/bench_nbits_grid.json results/bench_runpod.json \
+         results/bench_baselines_runpod.json results/bench_e2e_runpod.json; do
     echo "───── $f ─────"
     cat "$f" 2>/dev/null || echo "(missing)"
 done
