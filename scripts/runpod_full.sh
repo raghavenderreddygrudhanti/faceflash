@@ -18,11 +18,16 @@
 #   - 50GB+ disk space
 #   - ~60-90 minutes total runtime
 #
-# HOW TO USE:
-#   1. Open a terminal on RunPod
-#   2. Paste this entire script
-#   3. Wait for completion
-#   4. Results appear in results/ and docs/figures/
+# HOW TO USE — ONE command on a fresh RunPod terminal:
+#
+#   curl -sSL https://raw.githubusercontent.com/***REMOVED***rudhanti/faceflash/main/scripts/runpod_full.sh -o /tmp/run.sh && bash /tmp/run.sh
+#
+#   (optional, to also auto-push to GitHub: `export GITHUB_TOKEN=ghp_xxx` first)
+#   (optional, to use MS1MV2: `export DATASET=<repo> DATA_TAG=ms1m` first)
+#
+# It installs everything, builds, downloads models, extracts, benchmarks, and
+# bundles all results. The absolute results FOLDER + a single .tar.gz path are
+# printed at the very end — download those before stopping the pod.
 #
 # ═══════════════════════════════════════════════════════════════════════════
 set -e
@@ -89,7 +94,10 @@ log "│ STEP 1/7: Installing dependencies                           │"
 log "└─────────────────────────────────────────────────────────────┘"
 log ""
 
-cd /workspace
+WORKDIR="${WORKDIR:-/workspace}"
+mkdir -p "$WORKDIR" 2>/dev/null || WORKDIR="$HOME"
+cd "$WORKDIR"
+log "  Working directory: $WORKDIR"
 if [ ! -d "faceflash" ]; then
     log "  Cloning repository from GitHub..."
     git clone https://github.com/***REMOVED***rudhanti/faceflash.git
@@ -674,21 +682,39 @@ fi
 log ""
 
 # ═══════════════════════════════════════════════════════════════════════════
-# SUMMARY — dump results to the log as a last-resort fallback
+# SUMMARY — bundle everything into one folder + tarball, print the path
 # ═══════════════════════════════════════════════════════════════════════════
-log "═══════════════════════════════════════════════════════════════"
-log "  PIPELINE COMPLETE"
-log "═══════════════════════════════════════════════════════════════"
-log ""
-log "  Saved under results/ and results/runpod/ (timestamped, never overwritten)"
-log "  Log: $LOG_FILE"
-log ""
-log "  If the push FAILED above, copy the JSON below before stopping the pod:"
-echo "═══════════════ RESULTS (fallback copy) ═══════════════"
-for f in results/bench_nbits_grid.json results/bench_runpod.json \
+RESULTS_DIR_ABS="$(pwd)/results"
+FIGURES_DIR_ABS="$(pwd)/docs/figures"
+BUNDLE="${WORKDIR:-/workspace}/faceflash_results_${RUN_TS}.tar.gz"
+
+BUNDLE_PATHS="results"
+[ -d docs/figures ] && BUNDLE_PATHS="$BUNDLE_PATHS docs/figures"
+tar czf "$BUNDLE" $BUNDLE_PATHS 2>/dev/null || log "  ⚠ could not create bundle"
+
+echo ""
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║   PIPELINE COMPLETE — DOWNLOAD YOUR RESULTS FROM HERE          ║"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "   ➜ FOLDER (all results):"
+echo "       ${RESULTS_DIR_ABS}"
+echo "       └─ runpod/   timestamped copies (one per run, never overwritten)"
+echo ""
+echo "   ➜ ONE FILE (easiest to download):"
+echo "       ${BUNDLE}"
+echo ""
+echo "   ➜ FIGURES:"
+echo "       ${FIGURES_DIR_ABS}"
+echo ""
+echo "   Result files produced:"
+for f in results/bench_runpod.json results/bench_nbits_grid.json \
          results/bench_ann_comparison.json results/bench_e2e_runpod.json \
          results/bench_identification_runpod.json; do
-    echo "───── $f ─────"
-    cat "$f" 2>/dev/null || echo "(missing)"
+    [ -f "$f" ] && echo "       ✓ ${f}" || echo "       ✗ ${f} (not produced)"
 done
-echo "═══════════════════════════════════════════════════════"
+echo ""
+echo "   (Results are also on GitHub if GITHUB_TOKEN was set.)"
+echo "═══════════════════════════════════════════════════════════════════"
+log "  Bundle: $BUNDLE"
+log "  Folder: $RESULTS_DIR_ABS"
