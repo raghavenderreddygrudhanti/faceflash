@@ -13,7 +13,7 @@ pip install faceflash
 ```python
 from faceflash import FaceFlash
 
-ff = FaceFlash()
+ff = FaceFlash()  # defaults: n_bits=512, n_candidates=100 (≥99% recall) — see "Tuning" to trade memory vs I/O
 
 # Register faces
 ff.register("Alice", "alice.jpg")
@@ -170,6 +170,36 @@ Latency scales linearly. Memory = 64 bytes per face. ~8x faster than FAISS-Flat.
 
 ---
 
+## Tuning: `n_bits` × `n_candidates`
+
+FaceFlash has exactly two knobs, and they **substitute for each other** to reach a recall target:
+
+- **`n_bits`** — binary code length. Memory = `n_bits / 8` bytes per face. More bits = sharper filter = fewer candidates needed for the same recall.
+- **`n_candidates`** — rerank shortlist size (search effort, independent of `k`). More candidates = higher recall, but each one is a float rerank — and on edge, a separate mmap read from disk.
+
+The binary-scan latency is nearly flat (~0.3–0.5 ms across every setting), so the right trade depends on your **bottleneck**:
+
+| Deployment | Bottleneck | Config | Recall@1 | Memory |
+|---|---|---|---|---|
+| **Server** (floats in RAM) | resident memory | `n_bits=256, n_candidates=300` | 99.1% | 3.0 MB |
+| **Balanced** (default) | — | `n_bits=512, n_candidates=100` | 99.9% | 6.1 MB |
+| **Edge** (floats mmap'd on flash) | candidate I/O | `n_bits=512, n_candidates=50` | 99.1% | 6.1 MB, 50 reads |
+
+```python
+# Server: minimize RAM — fewer bits, more candidates (candidates are cheap in RAM)
+ff = FaceFlash(n_bits=256, n_candidates=300)
+
+# Edge: minimize disk reads — more bits, fewer candidates (each candidate = a flash read)
+ff = FaceFlash(n_bits=512, n_candidates=50)
+
+# Per-query override of the search-effort knob
+ff.search("query.jpg", k=1, n_candidates=200)
+```
+
+> **Server bottleneck is memory → fewer bits, more candidates. Edge bottleneck is I/O → more bits, fewer candidates.** Numbers from `benchmarks/bench_nbits_grid.py` (VGGFace2 100K, 873 queries, 95% bootstrap CIs). 128 bits is omitted — too lossy (≤96% even at 300 candidates); 384→512 is not statistically significant above 30 candidates (McNemar).
+
+---
+
 ## Architecture
 
 ```
@@ -190,7 +220,7 @@ rust/
 ArcFace embeddings concentrate identity-discriminative information along principal axes. PCA aligns quantization boundaries with those axes. Random projections waste bits on low-variance directions.
 
 **Why not HNSW?**
-HNSW requires 1.5x the memory of raw vectors (graph edges). FaceFlash's binary index is 32x smaller (6 MB vs 195 MB at 100K). Float vectors are still needed for reranking but can be memory-mapped from disk — only K candidate rows (~100 KB) are paged in per query. On memory-constrained devices, resident RAM is dominated by the 6 MB binary index.
+HNSW requires 1.5x the memory of raw vectors (graph edges). FaceFlash's binary index is 48x smaller (6 MB vs 292 MB at 100K). Float vectors are still needed for reranking but can be memory-mapped from disk — only K candidate rows (~100 KB) are paged in per query. On memory-constrained devices, resident RAM is dominated by the 6 MB binary index.
 
 **Why Rust?**
 The Hamming scan uses hardware POPCNT instructions. Rust compiles to tight SIMD loops — 50x faster than NumPy.
