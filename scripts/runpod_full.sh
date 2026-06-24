@@ -131,7 +131,7 @@ log "│ STEP 4/7: Extracting 1M face embeddings from VGGFace2       │"
 log "└─────────────────────────────────────────────────────────────┘"
 log ""
 log "  Data source: VGGFace2 (3.3M images, 9,131 identities)"
-log "  Streamed from: HuggingFace (logasja/VGGFace2, test split)"
+log "  Streamed from: HuggingFace (logasja/VGGFace2, train split)"
 log "  Target: 1,000,000 embeddings"
 log "  Method: ArcFace ONNX inference (GPU if available)"
 log "  Output: data/vggface2_1m_embeddings.npy + data/vggface2_1m_labels.npy"
@@ -181,7 +181,7 @@ if CHECKPOINT.exists():
 
 from datasets import load_dataset
 print(f'  Connecting to HuggingFace (logasja/VGGFace2, test split)...')
-ds = load_dataset('logasja/VGGFace2', split='test', streaming=True)
+ds = load_dataset('logasja/VGGFace2', split='train', streaming=True)
 
 print(f'  Loading ArcFace model...')
 embedder = FaceEmbedder()
