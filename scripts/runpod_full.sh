@@ -109,6 +109,10 @@ if [ ! -d "faceflash" ]; then
         log "    Run: export GITHUB_TOKEN=ghp_xxx   (scope: repo)"
         git clone "https://github.com/${REMOTE_SLUG}.git"
     fi
+    if [ ! -d "faceflash" ]; then
+        log "  ✗✗✗ FATAL: Clone failed. Check your GITHUB_TOKEN and network."
+        exit 1
+    fi
     log "  ✓ Repository cloned"
 else
     log "  Repository already exists, pulling latest..."
@@ -161,6 +165,11 @@ else
 fi
 
 python -c "import faceflash_core; print('  Verification: faceflash_core loaded successfully')"
+if [ $? -ne 0 ]; then
+    log "  ✗✗✗ FATAL: faceflash_core won't import. Rust build failed."
+    log "    Without it, search benchmarks will be 50x slower and results meaningless."
+    exit 1
+fi
 log ""
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -185,6 +194,25 @@ else
     curl -L --progress-bar -o "$MODEL_DIR/arcface_r100.onnx" \
         "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx"
     log "  ✓ Model downloaded ($(du -h $MODEL_DIR/arcface_r100.onnx | cut -f1))"
+fi
+
+# Verify GPU is available for ONNX — fail fast if extraction will crawl
+GPU_CHECK=$(python -c "
+import onnxruntime as ort
+providers = ort.get_available_providers()
+if 'CUDAExecutionProvider' in providers:
+    print('GPU')
+else:
+    print('CPU')
+" 2>/dev/null)
+if [ "$GPU_CHECK" = "GPU" ]; then
+    log "  ✓ GPU verified: CUDAExecutionProvider available"
+else
+    log "  ⚠⚠⚠ WARNING: GPU NOT DETECTED — onnxruntime sees CPU only!"
+    log "    Extraction will take DAYS instead of ~50 min."
+    log "    Fix: pip install onnxruntime-gpu with correct CUDA version"
+    log "    Continuing anyway (Ctrl+C to stop and fix)..."
+    sleep 5
 fi
 log ""
 
