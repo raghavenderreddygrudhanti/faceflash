@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install pytest
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Check imports
+        run: |
+          python -c "from faceflash import FaceFlash, PCABinaryQuantizer, backend_info"
+          python -c "from faceflash.index import FaceIndex"
+          python -c "from faceflash.pca_quantize import PCABinaryQuantizer"

@@ -1,8 +1,11 @@
 # FaceFlash
 
+<!-- GitHub repo settings: add topics: face-recognition, vector-search, binary-hashing, edge-ai, memory-efficient, arcface, rust -->
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 [![Rust POPCNT](https://img.shields.io/badge/backend-Rust%20POPCNT-orange.svg)](rust/)
+[![CI](https://github.com/***REMOVED***rudhanti/faceflash/actions/workflows/ci.yml/badge.svg)](https://github.com/***REMOVED***rudhanti/faceflash/actions)
 
 **Face search that fits in a megabyte.**
 
@@ -10,7 +13,7 @@ Search 13,000 distinct people in 0.84 MB. Search 500,000 faces in 30 MB.
 Same accuracy as exact brute-force search, 48-96x less memory. Runs on CPU.
 
 ```
-pip install faceflash
+pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git
 ```
 
 ## At a Glance
@@ -179,14 +182,15 @@ for the ~100 candidates that pass the binary filter.
 ## Installation
 
 ```bash
-# Python package
-pip install faceflash
+# Python package (from GitHub)
+pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git
 
 # With Rust backend (recommended — 50x faster search)
-cd rust && maturin develop --release
+git clone https://github.com/***REMOVED***rudhanti/faceflash.git
+cd faceflash/rust && maturin develop --release
 
 # With all benchmark dependencies
-pip install faceflash[benchmark]
+pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git#egg=faceflash[benchmark]
 ```
 
 ## Reproduce the Benchmarks
