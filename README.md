@@ -21,7 +21,7 @@ pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git
 |  | FaceFlash | HNSWLIB (best competitor) |
 |--|-----------|--------------------------|
 | Find the right person (rank-1) | **95.8%** | 95.7% (exact ceiling) |
-| Memory for 13,724 people | **0.84 MB** | 293 MB |
+| Memory for 100K faces | **3 MB** | 293 MB |
 | Memory for 500K faces | **30 MB** | 1,465 MB |
 | Recall@1 at 100K | **99.9%** | 99.8% |
 | Recall@1 at 500K | **99.9%** | 99.6% |
