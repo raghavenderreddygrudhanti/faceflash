@@ -8,10 +8,9 @@ build/
 .faceflash/
 .venv/
 rust/target/
-data/*.npy
-data/*.npz
-data/*.tgz
-data/lfw_funneled/
+# Datasets, embeddings and raw images live locally or on HuggingFace — NEVER in git
+# (images can be 16GB; embeddings 2GB). Results go to git; embeddings to HF.
+data/
 
 # OS junk
 .DS_Store
