@@ -1,10 +1,13 @@
 """
 Alignment benchmark — Haar center-crop vs RetinaFace 5-point alignment.
 
-Runs the standard LFW verification protocol (pairs.txt, 10 folds) from RAW
-images through each alignment path, then the same ArcFace embedder. Reports
-10-fold accuracy and TAR@FAR. This is the benchmark that actually measures the
-alignment upgrade — the embedding benchmarks use pre-aligned data and bypass it.
+Runs the standard LFW verification protocol from RAW images through each
+alignment path, then the same ArcFace embedder. Reports 10-fold accuracy and
+TAR@FAR. This is the benchmark that measures the alignment upgrade — the
+embedding benchmarks use pre-aligned data and bypass it.
+
+LFW source (auto): local data/lfw_funneled/pairs.txt if present, else
+scikit-learn's fetch_lfw_pairs (downloads + caches reliably — no manual fetch).
 
 Usage:
     python benchmarks/bench_alignment.py
@@ -26,55 +29,70 @@ LFW_DIR = Path(__file__).parent.parent / "data" / "lfw_funneled"
 RESULTS_DIR = Path(__file__).parent.parent / "results"
 
 
-def _img_path(name, idx):
-    return LFW_DIR / name / f"{name}_{int(idx):04d}.jpg"
-
-
-def parse_pairs(max_pairs=None):
-    """Parse LFW pairs.txt → list of (pathA, pathB, same)."""
-    lines = (LFW_DIR / "pairs.txt").read_text().splitlines()[1:]  # skip header
-    pairs = []
-    for ln in lines:
-        f = ln.split()
-        if len(f) == 3:      # same person
-            a, b, same = _img_path(f[0], f[1]), _img_path(f[0], f[2]), True
-        elif len(f) == 4:    # different people
-            a, b, same = _img_path(f[0], f[1]), _img_path(f[2], f[3]), False
-        else:
-            continue
-        if a.exists() and b.exists():   # skip pairs missing from a partial dataset
-            pairs.append((a, b, same))
-    if max_pairs:
-        # keep balance: interleave from both ends (same pairs first half, diff second)
-        pairs = pairs[:max_pairs // 2] + pairs[-max_pairs // 2:]
-    return pairs
-
-
-def embed_all(paths, embedder, method):
-    """Embed each unique image once via the given alignment method."""
+def load_lfw(max_pairs=None):
+    """Return (images {key: rgb_uint8}, pairs [(key_a, key_b, same)])."""
     import cv2
+    images, pairs = {}, []
+
+    if (LFW_DIR / "pairs.txt").exists():
+        print("  LFW source: local data/lfw_funneled/")
+        def _p(name, idx):
+            return LFW_DIR / name / f"{name}_{int(idx):04d}.jpg"
+        for ln in (LFW_DIR / "pairs.txt").read_text().splitlines()[1:]:
+            f = ln.split()
+            if len(f) == 3:
+                a, b, same = _p(f[0], f[1]), _p(f[0], f[2]), True
+            elif len(f) == 4:
+                a, b, same = _p(f[0], f[1]), _p(f[2], f[3]), False
+            else:
+                continue
+            if a.exists() and b.exists():
+                ka, kb = str(a), str(b)
+                images[ka] = None
+                images[kb] = None
+                pairs.append((ka, kb, same))
+        for k in images:
+            images[k] = cv2.cvtColor(cv2.imread(k), cv2.COLOR_BGR2RGB)
+    else:
+        print("  LFW source: scikit-learn fetch_lfw_pairs (download + cache)")
+        from sklearn.datasets import fetch_lfw_pairs
+        d = fetch_lfw_pairs(subset="10_folds", funneled=True, color=True, resize=1.0)
+        arr = d.pairs
+        if arr.max() <= 1.0:
+            arr = arr * 255.0
+        arr = arr.astype(np.uint8)
+        for i, (pair, lbl) in enumerate(zip(arr, d.target)):
+            ka, kb = f"{i}a", f"{i}b"
+            images[ka], images[kb] = pair[0], pair[1]
+            pairs.append((ka, kb, bool(lbl)))
+
+    if max_pairs:
+        pairs = pairs[:max_pairs // 2] + pairs[-max_pairs // 2:]
+        keep = {k for a, b, _ in pairs for k in (a, b)}
+        images = {k: v for k, v in images.items() if k in keep}
+    return images, pairs
+
+
+def embed_method(images, embedder, method):
+    """Embed each unique image once via the given alignment method."""
     cache = {}
-    for p in paths:
-        if p in cache:
-            continue
-        img = cv2.cvtColor(cv2.imread(str(p)), cv2.COLOR_BGR2RGB)
+    for k, img in images.items():
         if method == "haar":
             face = _detect_haar_fallback(img)
         else:  # retinaface (falls back to haar if no face found)
             face = align_mod.detect_and_align(img)
             if face is None:
                 face = _detect_haar_fallback(img)
-        cache[p] = embedder.embed(face)
+        cache[k] = embedder.embed(face)
     return cache
 
 
 def tenfold_accuracy(sims, labels):
-    """Standard LFW 10-fold accuracy: threshold tuned on 9 folds, tested on the 10th."""
+    """LFW 10-fold accuracy: threshold tuned on 9 folds, tested on the 10th."""
     sims, labels = np.asarray(sims), np.asarray(labels)
-    n = len(sims)
-    folds = np.array_split(np.arange(n), 10)
-    accs = []
+    folds = np.array_split(np.arange(len(sims)), 10)
     thresholds = np.linspace(-1, 1, 400)
+    accs = []
     for i in range(10):
         test = folds[i]
         train = np.concatenate([folds[j] for j in range(10) if j != i])
@@ -86,23 +104,20 @@ def tenfold_accuracy(sims, labels):
 
 def tar_at_far(sims, labels, far_target=0.001):
     sims, labels = np.asarray(sims), np.asarray(labels)
-    impostor = sims[labels == 0]
-    genuine = sims[labels == 1]
-    thr = np.quantile(impostor, 1 - far_target)   # threshold giving the target FAR
-    return float((genuine >= thr).mean())
+    thr = np.quantile(sims[labels == 0], 1 - far_target)
+    return float((sims[labels == 1] >= thr).mean())
 
 
-def evaluate(method, pairs, embedder):
-    paths = [p for pair in pairs for p in pair[:2]]
-    cache = embed_all(paths, embedder, method)
+def evaluate(method, images, pairs, embedder):
+    cache = embed_method(images, embedder, method)
     sims = [float(cache[a] @ cache[b]) for a, b, _ in pairs]
-    labels = [int(same) for _, _, same in pairs]
+    labels = [int(s) for _, _, s in pairs]
     acc, std = tenfold_accuracy(sims, labels)
     return {
         "method": method,
         "accuracy": round(acc, 4),
         "accuracy_std": round(std, 4),
-        "tar_at_far_1e-3": round(tar_at_far(sims, labels, 1e-3), 4),
+        "tar_at_far_1e-3": round(tar_at_far(sims, labels), 4),
         "mean_genuine_cos": round(float(np.mean([s for s, l in zip(sims, labels) if l])), 4),
         "mean_impostor_cos": round(float(np.mean([s for s, l in zip(sims, labels) if not l])), 4),
     }
@@ -110,18 +125,19 @@ def evaluate(method, pairs, embedder):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--max-pairs", type=int, default=None, help="subset for a quick run")
+    ap.add_argument("--max-pairs", type=int, default=None)
     args = ap.parse_args()
 
-    pairs = parse_pairs(args.max_pairs)
-    print(f"  LFW pairs: {len(pairs)} ({sum(p[2] for p in pairs)} same)")
+    images, pairs = load_lfw(args.max_pairs)
+    print(f"  LFW pairs: {len(pairs)} ({sum(p[2] for p in pairs)} same), "
+          f"{len(images)} unique images")
     embedder = FaceEmbedder()
 
     out = {"benchmark": "alignment (LFW verification)", "n_pairs": len(pairs), "results": []}
     print(f"\n  {'method':<12} {'accuracy':<16} {'TAR@FAR=1e-3':<14} {'genuine':<9} {'impostor'}")
     print("  " + "-" * 62)
     for method in ("haar", "retinaface"):
-        r = evaluate(method, pairs, embedder)
+        r = evaluate(method, images, pairs, embedder)
         out["results"].append(r)
         print(f"  {method:<12} {r['accuracy']*100:>5.2f}% ± {r['accuracy_std']*100:.2f}    "
               f"{r['tar_at_far_1e-3']*100:>6.2f}%       "
@@ -134,7 +150,7 @@ def main():
     RESULTS_DIR.mkdir(exist_ok=True)
     with open(RESULTS_DIR / "bench_alignment.json", "w") as f:
         json.dump(out, f, indent=2)
-    print(f"  ✓ Saved: results/bench_alignment.json")
+    print("  ✓ Saved: results/bench_alignment.json")
 
 
 if __name__ == "__main__":

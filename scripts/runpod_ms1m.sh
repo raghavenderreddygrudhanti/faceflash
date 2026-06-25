@@ -216,13 +216,9 @@ mkdir -p "$HOME/.faceflash/models"
 [ -f "$HOME/.faceflash/models/det_10g.onnx" ] || curl -sL \
     -o "$HOME/.faceflash/models/det_10g.onnx" \
     "https://huggingface.co/immich-app/buffalo_l/resolve/main/detection/model.onnx"
-# raw LFW funneled images + pairs
-if [ ! -f data/lfw_funneled/pairs.txt ]; then
-    log "  Downloading LFW funneled (~233MB)..."
-    mkdir -p data
-    curl -sL -o /tmp/lfw.tgz "https://vis-www.cs.umass.edu/lfw/lfw-funneled.tgz" && tar xzf /tmp/lfw.tgz -C data/
-    curl -sL -o data/lfw_funneled/pairs.txt "https://vis-www.cs.umass.edu/lfw/pairs.txt"
-fi
+# LFW is fetched by bench_alignment.py via scikit-learn (download + cache),
+# so no fragile manual tarball download is needed.
+pip install -q scikit-learn 2>/dev/null
 python benchmarks/bench_alignment.py 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
