@@ -51,22 +51,45 @@ else
 
     pip install -q kaggle 2>/dev/null
 
-    if [ -d "$MS1M_DIR" ] && [ "$(ls -A $MS1M_DIR 2>/dev/null | head -1)" ]; then
-        log "  ✓ MS1MV2 data already downloaded"
-    else
-        log "  Downloading MS1MV2 from Kaggle (~16GB, takes 5-10 min)..."
-        mkdir -p "$MS1M_DIR"
-        kaggle datasets download -d yakhyokhuja/ms1m-arcface-dataset -p "$MS1M_DIR" 2>&1 | tail -5
-        if [ $? -ne 0 ]; then
-            log "  ✗ Kaggle download failed!"
-            exit 1
+    # Step 1a: Download zip if not present
+    if [ ! -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
+        # Check if already fully extracted (85K+ folders)
+        FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
+        if [ "$FOLDER_COUNT" -ge 80000 ]; then
+            log "  ✓ MS1MV2 already fully extracted ($FOLDER_COUNT folders)"
+        else
+            log "  Downloading MS1MV2 from Kaggle (~16GB, takes 5-10 min)..."
+            mkdir -p "$MS1M_DIR"
+            kaggle datasets download -d yakhyokhuja/ms1m-arcface-dataset -p "$MS1M_DIR" 2>&1 | tail -5
+            if [ ! -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
+                log "  ✗ Kaggle download failed!"
+                exit 1
+            fi
+            log "  ✓ Download complete"
         fi
-        log "  Extracting archive..."
-        cd "$MS1M_DIR"
-        unzip -q *.zip 2>/dev/null || true
-        rm -f *.zip 2>/dev/null
-        cd /workspace/faceflash
-        log "  ✓ MS1MV2 downloaded and extracted"
+    else
+        log "  ✓ MS1MV2 zip already present"
+    fi
+
+    # Step 1b: Extract zip if needed (check folder count)
+    FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
+    if [ "$FOLDER_COUNT" -lt 80000 ] && [ -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
+        log "  Extracting MS1MV2 zip (~85K folders, showing progress every 30s)..."
+        log "  Currently: $FOLDER_COUNT folders"
+        unzip -o "$MS1M_DIR/ms1m-arcface-dataset.zip" -d "$MS1M_DIR/" > /tmp/unzip_ms1m.log 2>&1 &
+        UNZIP_PID=$!
+        while kill -0 $UNZIP_PID 2>/dev/null; do
+            CURRENT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
+            log "    extracting... $CURRENT / ~85,742 folders"
+            sleep 30
+        done
+        wait $UNZIP_PID
+        FINAL_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
+        log "  ✓ Extraction done: $FINAL_COUNT identity folders"
+        # Clean up zip to save disk
+        rm -f "$MS1M_DIR/ms1m-arcface-dataset.zip" 2>/dev/null
+    else
+        log "  ✓ MS1MV2 extraction complete: $FOLDER_COUNT identity folders"
     fi
 
     # ─────────────────────────────────────────────────────────────────────
