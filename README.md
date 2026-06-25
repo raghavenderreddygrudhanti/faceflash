@@ -149,6 +149,28 @@ The built-in 5-point alignment vs the basic Haar center-crop, both through the s
 
 Proper alignment lifts accuracy **+1.30 points** — this is what lets raw photos approach the pre-aligned benchmark numbers.
 
+### Scaling to Millions
+
+By default search scans every face — fine up to a few million, but the time grows
+with the database. `build_clusters()` adds an optional IVF layer: faces are grouped
+into ~√N buckets, and a query only scans the `n_probe` closest buckets.
+
+```python
+ff.index.build_clusters(n_probe=16)   # after registering faces
+```
+
+Measured (100K vs 400K synthetic faces, Rust backend, single thread):
+
+| Database | Full scan | Clustered (n_probe=16) | Speedup |
+|----------|-----------|------------------------|---------|
+| 100K | 0.68 ms | 0.25 ms | 2.7× |
+| 400K | 2.37 ms | 0.49 ms | 4.9× |
+
+The speedup **widens as the database grows** — full scan slows ~linearly, clustered
+stays nearly flat. `n_probe` is the recall/speed knob: at 100K, n_probe=8 → ~95%
+recall, n_probe=32 → ~98%. Probe every bucket and you reproduce the exact full-scan
+result. Leave clustering off and search is unchanged.
+
 ### When to Use It / When Not To
 
 | Use FaceFlash when | Don't use FaceFlash when |
@@ -205,7 +227,7 @@ Result: fewer candidates needed for the same recall vs random projection.
 
 ## Limitations
 
-- **Linear scan** — search time scales linearly with database size (not sub-linear like HNSW)
+- **Scan cost** — the default search is a full linear scan. For large databases, `build_clusters()` adds an optional IVF layer that scans only the closest buckets (sub-linear), trading a little recall for speed — see [Scaling to Millions](#scaling-to-millions)
 - **Memory during build** — constructing the index holds all float vectors in RAM. The mmap benefit applies after `save()`/`load()`
 - **Face detection** — raw photos are handled by a built-in SCRFD detector with 5-point alignment to the ArcFace template (Haar cascade as fallback). The retrieval benchmarks (99.9% recall, 95.8% rank-1) used pre-aligned data so they isolate the index, not the detector. If you already have aligned 112×112 crops, pass them directly to skip detection.
 - **Rust backend** — builds into the package automatically on `pip install` (needs a Rust toolchain from source; prebuilt PyPI wheels need nothing). Falls back to NumPy if unavailable
@@ -256,7 +278,7 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification
 - [ ] **On-device memory measurement** — measured RSS on Raspberry Pi / ARM, not just modeled
 
 **v0.3.0** — performance
-- [ ] **Coarse clustering** — partition codes into ~1000 buckets for sub-linear scan
+- [x] **Coarse clustering** — IVF buckets for sub-linear scan (`build_clusters()`); 2.7–4.9× faster at 100K–400K, widening with scale
 - [ ] **SIMD/AVX-512 Hamming** — 4-8 codes per cycle on x86
 - [ ] **NEON kernels** — ARM-optimized for mobile/edge
 

@@ -147,3 +147,41 @@ def test_stats_keys():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+# ── coarse clustering (IVF) ──────────────────────────────────────────────────
+def test_clustered_search_finds_self_match():
+    idx, embs = _build(n=1500)
+    idx.build_clusters(n_clusters=32, n_probe=8)
+    assert idx.cluster is not None
+    # self-query must land in a probed bucket and rerank to itself
+    res = idx.search(embs[100], k=1, n_probe=32)  # probe all → exact
+    assert res[0][0] == "p100"
+
+
+def test_clustered_search_roundtrip(tmp_path):
+    idx, embs = _build(n=1500)
+    idx.build_clusters(n_clusters=32, n_probe=8)
+    idx.save(str(tmp_path))
+    loaded = FaceIndex()
+    loaded.load(str(tmp_path))
+    assert loaded.cluster is not None
+    assert loaded.cluster.centroids.shape[0] == idx.cluster.centroids.shape[0]
+    res = loaded.search(embs[7], k=1, n_probe=32)
+    assert res[0][0] == "p7"
+
+
+def test_clusters_cover_all_faces():
+    idx, _ = _build(n=1500)
+    idx.build_clusters(n_clusters=32)
+    total = sum(len(m) for m in idx.cluster.members)
+    assert total == idx.count
+
+
+def test_full_probe_matches_full_scan():
+    """Probing every bucket must reproduce the un-clustered result."""
+    idx, embs = _build(n=1500)
+    plain = idx.search(embs[55], k=1)
+    idx.build_clusters(n_clusters=16)
+    clustered = idx.search(embs[55], k=1, n_probe=16)
+    assert plain[0][2] == clustered[0][2]

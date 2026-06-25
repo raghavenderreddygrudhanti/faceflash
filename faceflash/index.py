@@ -11,6 +11,7 @@ from typing import Optional, List, Tuple
 import json
 
 from faceflash.pca_quantize import PCABinaryQuantizer, _POPCOUNT_TABLE
+from faceflash.cluster import CoarseCluster
 
 # Try Rust backend — packaged as faceflash._core, with a fallback to a
 # top-level faceflash_core build (legacy / `maturin develop` dev workflow).
@@ -57,6 +58,9 @@ class FaceIndex:
         rng = np.random.default_rng(42)
         self.projection = rng.standard_normal((n_bits, dim)).astype(np.float32)
         self.projection /= np.linalg.norm(self.projection, axis=1, keepdims=True)
+
+        # Optional coarse clustering (IVF) for sub-linear scan. None = full scan.
+        self.cluster: Optional[CoarseCluster] = None
 
     def _flush_pending(self):
         """Flush buffered embeddings into the main arrays."""
@@ -140,8 +144,25 @@ class FaceIndex:
         # Re-encode all existing vectors with the fitted quantizer
         self.vectors = self.quantizer.encode(self.float_vectors)
 
+    def build_clusters(self, n_clusters: Optional[int] = None, n_probe: int = 8):
+        """Build a coarse-clustering (IVF) layer for sub-linear search.
+
+        Partitions faces into ~sqrt(N) buckets; search then scans only the
+        `n_probe` closest buckets instead of the whole database. This trades a
+        little recall (the match may sit in an unprobed bucket) for a large
+        speedup that stops growing with database size. Defaults: ~sqrt(N)
+        clusters, 8 probes. Call after all faces are added.
+        """
+        self._flush_pending()
+        if self.float_vectors is None or self.count == 0:
+            raise RuntimeError("Add faces before building clusters")
+        self.cluster = CoarseCluster(n_clusters=n_clusters, n_probe=n_probe)
+        self.cluster.build(self.float_vectors)
+        return self
+
     def search(self, query_embedding: np.ndarray, k: int = 1,
-               n_candidates: Optional[int] = None) -> List[Tuple[str, float, int]]:
+               n_candidates: Optional[int] = None,
+               n_probe: Optional[int] = None) -> List[Tuple[str, float, int]]:
         """
         Two-phase search: Hamming filter → cosine rerank.
         Uses Rust backend when available (50x faster).
@@ -168,13 +189,27 @@ class FaceIndex:
             n_candidates = max(100, k * 10)
         n_candidates = min(n_candidates, self.count - 1) if self.count > 1 else 1
 
-        if _HAS_RUST:
-            topk = _rust.hamming_topk(query_packed, self.vectors, n_candidates)
-            candidate_indices = np.asarray(topk).astype(np.intp)
+        # Coarse clustering: restrict the scan to the closest buckets (sub-linear).
+        # Without clustering, `pool` spans the whole database (full scan).
+        if self.cluster is not None:
+            pool = self.cluster.candidate_pool(query_embedding, n_probe=n_probe)
+            scan_vectors = self.vectors[pool]
+            n_cand = min(n_candidates, len(pool))
         else:
-            xor = np.bitwise_xor(self.vectors, query_packed.reshape(1, -1))
+            pool = None
+            scan_vectors = self.vectors
+            n_cand = n_candidates
+
+        if _HAS_RUST:
+            topk = _rust.hamming_topk(query_packed, scan_vectors, n_cand)
+            local_indices = np.asarray(topk).astype(np.intp)
+        else:
+            xor = np.bitwise_xor(scan_vectors, query_packed.reshape(1, -1))
             distances = _POPCOUNT_TABLE[xor].sum(axis=1)
-            candidate_indices = np.argpartition(distances, n_candidates)[:n_candidates]
+            local_indices = np.argpartition(distances, min(n_cand, len(distances) - 1))[:n_cand]
+
+        # Map bucket-local indices back to global face indices
+        candidate_indices = pool[local_indices] if pool is not None else local_indices
 
         # Phase 2: Cosine rerank
         candidates_float = self.float_vectors[candidate_indices]
@@ -234,6 +269,15 @@ class FaceIndex:
         # Persist quantizer if fitted
         if self._pca_fitted:
             self.quantizer.save(str(p / "quantizer"))
+        # Persist coarse clusters if built (centroids + per-face assignment)
+        if self.cluster is not None and self.cluster.centroids is not None:
+            assign = np.empty(self.count, dtype=np.int32)
+            for c, members in enumerate(self.cluster.members):
+                assign[members] = c
+            np.savez(p / "clusters.npz",
+                     centroids=self.cluster.centroids,
+                     assign=assign,
+                     n_probe=self.cluster.n_probe)
 
     def load(self, path: str):
         """Load index + quantizer from disk."""
@@ -250,6 +294,16 @@ class FaceIndex:
         quantizer_path = p / "quantizer"
         if quantizer_path.exists() and self._pca_fitted:
             self.quantizer.load(str(quantizer_path))
+        # Restore coarse clusters if present
+        cl_path = p / "clusters.npz"
+        if cl_path.exists():
+            d = np.load(cl_path)
+            self.cluster = CoarseCluster(n_clusters=int(d["centroids"].shape[0]),
+                                         n_probe=int(d["n_probe"]))
+            self.cluster.centroids = d["centroids"]
+            assign = d["assign"]
+            self.cluster.members = [np.where(assign == c)[0].astype(np.intp)
+                                    for c in range(self.cluster.centroids.shape[0])]
 
     def stats(self) -> dict:
         """Return index statistics."""

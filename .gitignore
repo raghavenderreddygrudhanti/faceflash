@@ -19,3 +19,7 @@ Thumbs.db
 # Temporary/stale result folders
 results 2/
 results3/
+
+# Rust build artifacts (built by maturin on install)
+faceflash/*.so
+*.so
