@@ -250,7 +250,6 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification
 - [x] **5-point alignment** (SCRFD/RetinaFace) — raw photos hit 99.85% LFW (+1.30 pts)
 
 **v0.2.0** — production quality
-- [ ] **Prebuilt wheels** — `pip install faceflash` ships the Rust backend (no toolchain needed)
 - [ ] **Full 85K-identity benchmark** — extract all identities from MS1MV2, not just 13.7K
 - [ ] **On-device memory measurement** — measured RSS on Raspberry Pi / ARM, not just modeled
 
@@ -269,12 +268,13 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification
 
 FaceFlash is a working system with proven results. Key areas for contribution:
 
-- [ ] **Prebuilt wheels** — ship the Rust backend via maturin CI so `pip install` gets full speed
 - [ ] **Coarse clustering** — partition binary codes into ~1000 buckets for sub-linear scan (the main speed improvement path)
 - [ ] **SIMD/AVX-512 Hamming** — process 4-8 codes per cycle instead of one u64
+- [ ] **NEON kernels** — ARM-optimized for mobile/edge
 - [ ] **DiskANN comparison** — the one competitor we haven't benchmarked
 - [ ] **Mobile deployment** — ONNX + CoreML for on-device face search
 - [ ] **Streaming insertion** — add faces without refitting PCA (currently requires rebuild)
+- [ ] **Full 85K gallery benchmark** — run on all MS1MV2 identities
 
 ## License
 
