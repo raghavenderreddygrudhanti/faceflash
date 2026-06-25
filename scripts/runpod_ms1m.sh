@@ -10,15 +10,17 @@
 #
 # REQUIRES (set in your terminal — NEVER commit these):
 #   export GITHUB_TOKEN=<your-github-token>     # private repo + push results
-#   export HF_TOKEN=<your-hf-token>             # pull/push embeddings (private HF dataset)
+#   export HF_TOKEN=<your-hf-token>             # only if the HF dataset is PRIVATE
+#   export HF_EMB_REPO=<user>/<dataset>         # HF embeddings repo (optional; has a default)
 #   export KAGGLE_USERNAME=<your-kaggle-username>   # only if embeddings NOT on HF
 #   export KAGGLE_KEY=<your-kaggle-key>             # (HF pull skips Kaggle + extraction)
 #
-# ONE command on a fresh RunPod terminal:
-#   export GITHUB_TOKEN=ghp_xxx KAGGLE_USERNAME=you KAGGLE_KEY=key
+# ONE command on a fresh RunPod terminal (HF public → no HF_TOKEN needed):
+#   export GITHUB_TOKEN=ghp_xxx
+#   export HF_TOKEN=hf_xxx HF_EMB_REPO=raghavenderreddy1212/faceflash-embeddings   # if private
 #   git clone https://${GITHUB_TOKEN}@github.com/raghavenderreddygrudhanti/faceflash.git /workspace/faceflash && bash /workspace/faceflash/scripts/runpod_ms1m.sh
 #
-# Time: ~60-90 min (download ~16GB + extract 1M embeddings + benchmarks)
+# Time: ~5-15 min if embeddings pulled from HF (no GPU needed); ~60-90 min if extracting
 # ═══════════════════════════════════════════════════════════════════════════
 set +e  # keep going on errors; critical setup steps exit explicitly
 
