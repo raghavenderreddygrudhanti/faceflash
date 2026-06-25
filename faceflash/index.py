@@ -38,6 +38,11 @@ class FaceIndex:
         self.dim = dim
         self.n_bits = n_bits
 
+        # Pending buffer — avoids O(n²) vstack on every add()
+        self._pending_embeddings: List[np.ndarray] = []
+        self._pending_labels: List[str] = []
+        self._pending_paths: List[str] = []
+
         # PCA+ITQ quantizer (fitted once we have enough data)
         self.quantizer = PCABinaryQuantizer(n_bits=n_bits)
         self._pca_fitted = False
@@ -48,33 +53,52 @@ class FaceIndex:
         self.projection = rng.standard_normal((n_bits, dim)).astype(np.float32)
         self.projection /= np.linalg.norm(self.projection, axis=1, keepdims=True)
 
+    def _flush_pending(self):
+        """Flush buffered embeddings into the main arrays."""
+        if not self._pending_embeddings:
+            return
+        batch = np.array(self._pending_embeddings, dtype=np.float32)
+        labels = self._pending_labels[:]
+        paths = self._pending_paths[:]
+        self._pending_embeddings.clear()
+        self._pending_labels.clear()
+        self._pending_paths.clear()
+        # Use internal _add_batch_raw to avoid double-counting
+        self._add_batch_raw(batch, labels, paths)
+
     def add(self, embedding: np.ndarray, label: str, path: str = ""):
-        """Add a single face embedding to the index."""
-        if self._pca_fitted:
-            packed = self.quantizer.encode(embedding.reshape(1, -1))[0]
-        else:
-            binary = ((embedding @ self.projection.T) > 0).astype(np.uint8)
-            packed = np.packbits(binary)
+        """Add a single face embedding to the index.
 
-        if self.vectors is None:
-            self.vectors = packed.reshape(1, -1)
-            self.float_vectors = embedding.reshape(1, -1)
-        else:
-            self.vectors = np.vstack([self.vectors, packed.reshape(1, -1)])
-            self.float_vectors = np.vstack([self.float_vectors, embedding.reshape(1, -1)])
+        Buffers internally and flushes in batches for O(n) performance.
+        The index is always searchable — pending items are flushed
+        automatically before search or when the PCA fit threshold is reached.
+        """
+        if embedding.ndim != 1 or embedding.shape[0] != self.dim:
+            raise ValueError(f"Expected ({self.dim},) embedding, got {embedding.shape}")
 
-        self.labels.append(label)
-        self.paths.append(path)
+        self._pending_embeddings.append(embedding)
+        self._pending_labels.append(label)
+        self._pending_paths.append(path)
         self.count += 1
 
-        # Auto-fit PCA+ITQ once we have enough data
-        if not self._pca_fitted and self.count >= self._pca_fit_threshold:
-            self._fit_pca()
+        # Flush when buffer is large enough or PCA threshold reached
+        if len(self._pending_embeddings) >= 256 or \
+           (not self._pca_fitted and self.count >= self._pca_fit_threshold):
+            self._flush_pending()
 
-    def add_batch(self, embeddings: np.ndarray, labels: List[str], paths: List[str] = None):
+    def add_batch(self, embeddings: np.ndarray, labels: List[str], paths: Optional[List[str]] = None):
         """Add a batch of face embeddings (more efficient than repeated add())."""
+        if embeddings.ndim != 2 or embeddings.shape[1] != self.dim:
+            raise ValueError(f"Expected (N, {self.dim}) embeddings, got {embeddings.shape}")
+        if len(labels) != len(embeddings):
+            raise ValueError(f"labels length ({len(labels)}) != embeddings length ({len(embeddings)})")
         if paths is None:
             paths = [""] * len(labels)
+        self.count += len(labels)
+        self._add_batch_raw(embeddings, labels, paths)
+
+    def _add_batch_raw(self, embeddings: np.ndarray, labels: List[str], paths: List[str]):
+        """Internal: add batch without incrementing count (used by _flush_pending)."""
 
         # Store float vectors
         if self.float_vectors is None:
@@ -84,7 +108,6 @@ class FaceIndex:
 
         self.labels.extend(labels)
         self.paths.extend(paths)
-        self.count += len(labels)
 
         # Fit PCA if we now have enough data
         if not self._pca_fitted and self.count >= self._pca_fit_threshold:
@@ -122,6 +145,9 @@ class FaceIndex:
         count). More candidates → higher recall + more float reranks. Defaults
         to max(100, k*10), which reaches ≥99% recall in benchmarks.
         """
+        # Flush any buffered add() calls before searching
+        self._flush_pending()
+
         if self.vectors is None or self.count == 0:
             return []
 
@@ -163,6 +189,7 @@ class FaceIndex:
 
     def search_binary_only(self, query_embedding: np.ndarray, k: int = 1) -> List[Tuple[str, int, int]]:
         """Search using only binary codes (fastest, lower accuracy)."""
+        self._flush_pending()
         if self.vectors is None:
             return []
 
@@ -187,6 +214,7 @@ class FaceIndex:
 
     def save(self, path: str):
         """Save index + quantizer to disk."""
+        self._flush_pending()
         p = Path(path)
         p.mkdir(parents=True, exist_ok=True)
         np.save(p / "vectors.npy", self.vectors)
@@ -220,6 +248,7 @@ class FaceIndex:
 
     def stats(self) -> dict:
         """Return index statistics."""
+        self._flush_pending()
         mem_binary = self.vectors.nbytes if self.vectors is not None else 0
         # Float vectors may be mmap'd (on-disk, paged on demand) or resident
         float_is_mmap = hasattr(self.float_vectors, 'filename') and self.float_vectors.filename is not None
