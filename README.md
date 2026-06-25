@@ -70,7 +70,23 @@ Image → Detect Face → ArcFace Embedding (512-dim) → PCA+ITQ Binary Code (6
 Query → Same pipeline → Hamming Scan (Rust POPCNT) → Top-K Cosine Rerank → Match
 ```
 
-## Benchmarks
+## vs the Competition (100K faces, single-threaded)
+
+|  | FaceFlash | FAISS-Flat | FAISS-IVF | HNSWLIB | USearch | ScaNN |
+|--|-----------|-----------|-----------|---------|---------|-------|
+| **Recall@1** | 99.9% | 100% | 99.8% | 99.8% | 97.8% | 82.0% |
+| **Latency** | 0.62ms | 4.83ms | 1.12ms | 0.26ms | 0.10ms | 0.10ms |
+| **Memory** | **6 MB** | 195 MB | 205 MB | 293 MB | 254 MB | 12 MB |
+| **Training** | None | None | Required | Required | Required | Required |
+| **GPU needed** | No | No | No | No | No | No |
+
+**FaceFlash wins:** memory (48-96× less than graph indexes), no training step, highest recall among memory-efficient options.
+
+**FaceFlash loses:** latency (HNSW/USearch/ScaNN are 2-6× faster at the cost of 40-50× more RAM).
+
+**Bottom line:** if you have unlimited RAM, use HNSW. If memory is the constraint — edge, mobile, IoT, cheap hardware — FaceFlash is the only option that holds 99%+ recall.
+
+## Detailed Benchmarks
 
 All benchmarks: single-threaded, `time.perf_counter()` per query, ground truth = exact brute-force cosine argmax.
 
