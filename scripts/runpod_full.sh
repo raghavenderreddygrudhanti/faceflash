@@ -23,7 +23,7 @@
 #  tokens; classic token with scope "repo"). Then ONE command on the pod:
 #
 #   export GITHUB_TOKEN=ghp_your_token_here
-#   git clone https://${GITHUB_TOKEN}@github.com/***REMOVED***rudhanti/faceflash.git /workspace/faceflash && bash /workspace/faceflash/scripts/runpod_full.sh
+#   git clone https://${GITHUB_TOKEN}@github.com/raghavenderreddygrudhanti/faceflash.git /workspace/faceflash && bash /workspace/faceflash/scripts/runpod_full.sh
 #
 #   (optional, to use MS1MV2: also `export DATASET=<repo> DATA_TAG=ms1m`)
 #
@@ -43,7 +43,7 @@ log() {
 # RunPod is EPHEMERAL — results only survive if they reach GitHub.
 # Set GITHUB_TOKEN before running so the push works automatically:
 #   export GITHUB_TOKEN=ghp_xxx ; bash scripts/runpod_full.sh
-REMOTE_SLUG="***REMOVED***rudhanti/faceflash"
+REMOTE_SLUG="raghavenderreddygrudhanti/faceflash"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"   # one timestamp for the whole run (no overwrites)
 export RUN_TS
 

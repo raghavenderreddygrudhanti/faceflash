@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 [![Rust POPCNT](https://img.shields.io/badge/backend-Rust%20POPCNT-orange.svg)](rust/)
-[![CI](https://github.com/***REMOVED***rudhanti/faceflash/actions/workflows/ci.yml/badge.svg)](https://github.com/***REMOVED***rudhanti/faceflash/actions)
+[![CI](https://github.com/raghavenderreddygrudhanti/faceflash/actions/workflows/ci.yml/badge.svg)](https://github.com/raghavenderreddygrudhanti/faceflash/actions)
 
 **Face search that fits in a megabyte.**
 
@@ -13,7 +13,7 @@ Search 13,000 distinct people in 0.84 MB. Search 500,000 faces in 30 MB.
 Same accuracy as exact brute-force search, 48-96x less memory. Runs on CPU.
 
 ```
-pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git
+pip install git+https://github.com/raghavenderreddygrudhanti/faceflash.git
 ```
 
 ## At a Glance
@@ -38,9 +38,9 @@ All methods single-threaded, same hardware, same data.
 ```python
 from faceflash import FaceFlash
 
-ff = FaceFlash()
+ff = FaceFlash()  # first run downloads ArcFace model (~166MB)
 
-# Register faces
+# Register faces (best results with pre-aligned 112×112 crops)
 ff.register("Alice", "alice.jpg")
 ff.register("Bob", "bob.jpg")
 
@@ -57,6 +57,8 @@ ff.verify("photo1.jpg", "photo2.jpg")
 ff.register_folder("employees/")  # folder/person_name/photo.jpg
 ff.save("my_index/")
 ```
+
+> **Note:** The Rust backend (50× faster search) requires manual build — see [Installation](#installation). Without it, search uses NumPy fallback which is functional but slower at scale. For best accuracy, use pre-aligned 112×112 face images. See [Limitations](#limitations).
 
 ## How It Works
 
@@ -199,14 +201,14 @@ Result: fewer candidates needed for the same recall vs random projection.
 
 ```bash
 # Python package (from GitHub)
-pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git
+pip install git+https://github.com/raghavenderreddygrudhanti/faceflash.git
 
 # With Rust backend (recommended — 50x faster search)
-git clone https://github.com/***REMOVED***rudhanti/faceflash.git
+git clone https://github.com/raghavenderreddygrudhanti/faceflash.git
 cd faceflash/rust && maturin develop --release
 
 # With all benchmark dependencies
-pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git#egg=faceflash[benchmark]
+pip install git+https://github.com/raghavenderreddygrudhanti/faceflash.git#egg=faceflash[benchmark]
 ```
 
 ## Reproduce the Benchmarks

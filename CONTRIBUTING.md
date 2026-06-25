@@ -6,7 +6,7 @@ Thanks for your interest. Here's how to get started.
 
 ```bash
 # Clone
-git clone https://github.com/***REMOVED***rudhanti/faceflash.git
+git clone https://github.com/raghavenderreddygrudhanti/faceflash.git
 cd faceflash
 
 # Python environment

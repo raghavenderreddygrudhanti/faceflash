@@ -15,13 +15,13 @@
 #
 # ONE command on a fresh RunPod terminal:
 #   export GITHUB_TOKEN=ghp_xxx KAGGLE_USERNAME=you KAGGLE_KEY=key
-#   git clone https://${GITHUB_TOKEN}@github.com/***REMOVED***rudhanti/faceflash.git /workspace/faceflash && bash /workspace/faceflash/scripts/runpod_ms1m.sh
+#   git clone https://${GITHUB_TOKEN}@github.com/raghavenderreddygrudhanti/faceflash.git /workspace/faceflash && bash /workspace/faceflash/scripts/runpod_ms1m.sh
 #
 # Time: ~60-90 min (download ~16GB + extract 1M embeddings + benchmarks)
 # ═══════════════════════════════════════════════════════════════════════════
 set +e  # keep going on errors; critical setup steps exit explicitly
 
-REMOTE_SLUG="***REMOVED***rudhanti/faceflash"
+REMOTE_SLUG="raghavenderreddygrudhanti/faceflash"
 LOG_FILE="/workspace/faceflash_ms1m.log"
 log() { echo "[$(date '+%H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
 RUN_TS="$(date +%Y%m%d_%H%M%S)"

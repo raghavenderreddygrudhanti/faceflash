@@ -34,7 +34,7 @@ benchmark = ["faiss-cpu>=1.7", "nmslib>=2.1", "usearch>=2.0"]
 rust = ["maturin>=1.0"]
 
 [project.urls]
-Homepage = "https://github.com/***REMOVED***rudhanti/faceflash"
+Homepage = "https://github.com/raghavenderreddygrudhanti/faceflash"
 
 [tool.setuptools.packages.find]
 include = ["faceflash*"]
