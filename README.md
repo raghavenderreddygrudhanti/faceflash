@@ -33,6 +33,10 @@ All methods single-threaded, same hardware, same data.
 
 ![Memory to index 100K faces — FaceFlash 3 MB vs HNSW 293 MB](docs/figures/chart_memory_bar.png)
 
+<!-- TODO: Add demo GIF here showing register → search → result in terminal
+![FaceFlash demo](docs/figures/demo.gif)
+-->
+
 ## Quick Start
 
 ```python
@@ -224,6 +228,31 @@ export GITHUB_TOKEN=<token> KAGGLE_USERNAME=<user> KAGGLE_KEY=<key>
 bash scripts/runpod_full.sh      # VGGFace2 1M + all ANN comparisons
 bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification)
 ```
+
+## Roadmap
+
+**v0.1.0** (current) — working system with proven benchmarks
+- [x] PCA+ITQ binary quantization + Rust POPCNT search
+- [x] High-level API (register, search, verify)
+- [x] Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K–500K
+- [x] 1:N identification on 13,724 distinct identities (MS1MV2)
+
+**v0.2.0** — production quality
+- [ ] **RetinaFace alignment** — 5-point face alignment so raw photos match benchmark accuracy
+- [ ] **Prebuilt wheels** — `pip install faceflash` ships the Rust backend (no toolchain needed)
+- [ ] **Full 85K-identity benchmark** — extract all identities from MS1MV2, not just 13.7K
+- [ ] **On-device memory measurement** — measured RSS on Raspberry Pi / ARM, not just modeled
+
+**v0.3.0** — performance
+- [ ] **Coarse clustering** — partition codes into ~1000 buckets for sub-linear scan
+- [ ] **SIMD/AVX-512 Hamming** — 4-8 codes per cycle on x86
+- [ ] **NEON kernels** — ARM-optimized for mobile/edge
+
+**v1.0.0** — stable
+- [ ] Stable public API (no breaking changes after this)
+- [ ] DiskANN comparison
+- [ ] Mobile deployment (ONNX + CoreML)
+- [ ] Streaming insertion (add faces without refitting PCA)
 
 ## Contributing
 
