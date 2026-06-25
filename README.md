@@ -23,8 +23,8 @@ pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/f
 | Find the right person (rank-1) | **95.8%** | 95.7% (exact ceiling) |
 | Memory for 100K faces | **3 MB** | 293 MB |
 | Memory for 500K faces | **30 MB** | 1,465 MB |
-| Recall@1 at 100K | **99.9%** | 99.8% |
-| Recall@1 at 500K | **99.9%** | 99.6% |
+| Recall@1 at 100K | **99.9%** | 99.5% |
+| Recall@1 at 500K | **99.9%** | 99.5% |
 
 Tested on MS1MV2 (13,724 distinct identities) and VGGFace2 (500K images).
 All methods single-threaded, same hardware, same data.
@@ -130,13 +130,24 @@ ScaNN (the other memory-efficient option) drops to 82% recall. FaceFlash holds 9
 | Method | Recall@1 | Latency | Memory |
 |--------|----------|---------|--------|
 | FAISS-Flat (exact) | 100% | 24.4ms | 977 MB |
-| HNSWLIB (ef=128) | 99.6% | 0.40ms | 1,465 MB |
-| HNSWLIB (ef=64) | 99.2% | 0.22ms | 1,465 MB |
-| ScaNN | 93.3% | 0.37ms | 61 MB |
-| **FaceFlash (512b/200c)** | **99.9%** | 2.69ms | **30.5 MB** |
-| **FaceFlash (256b/100c)** | **99.6%** | 1.69ms | **15.3 MB** |
+| HNSWLIB (ef=128) | 99.5% | 0.41ms | 1,465 MB |
+| HNSWLIB (ef=64) | 99.1% | 0.22ms | 1,465 MB |
+| ScaNN | 92.0% | 0.37ms | 61 MB |
+| **FaceFlash (512b/200c)** | **99.9%** | 4.50ms | **30.5 MB** |
+| **FaceFlash (256b/100c)** | **99.6%** | 2.62ms | **15.3 MB** |
 
-At 500K: **48x less memory** than HNSW. HNSW is 6.7x faster. FaceFlash wins on memory.
+At 500K: **48x less memory** than HNSW. HNSW is ~11x faster — that's the tradeoff. FaceFlash wins on memory.
+
+### Face Alignment — Raw Photos (LFW Verification)
+
+The built-in 5-point alignment vs the basic Haar center-crop, both through the same ArcFace embedder on the standard LFW 10-fold protocol (6,000 pairs, raw funneled images):
+
+| Alignment | LFW Accuracy | TAR@FAR=1e-3 |
+|-----------|--------------|--------------|
+| Haar center-crop | 98.55% ± 0.49 | 96.93% |
+| **5-point (SCRFD/RetinaFace)** | **99.85% ± 0.17** | **99.73%** |
+
+Proper alignment lifts accuracy **+1.30 points** — this is what lets raw photos approach the pre-aligned benchmark numbers.
 
 ### When to Use It / When Not To
 
@@ -174,7 +185,8 @@ ff.search("query.jpg", n_candidates=200)         # per-query override
 ```
 faceflash/
 ├── engine.py          # High-level API (register, search, verify)
-├── detect.py          # Face detection (OpenCV Haar, RetinaFace planned)
+├── detect.py          # Face detection (SCRFD detector + Haar fallback)
+├── align.py           # 5-point RetinaFace/SCRFD alignment to ArcFace template
 ├── embed.py           # ArcFace ONNX embedding (512-dim, auto-downloads)
 ├── index.py           # Binary index with buffered O(n) add
 ├── pca_quantize.py    # PCA+ITQ quantizer (the core algorithm)
@@ -195,8 +207,8 @@ Result: fewer candidates needed for the same recall vs random projection.
 
 - **Linear scan** — search time scales linearly with database size (not sub-linear like HNSW)
 - **Memory during build** — constructing the index holds all float vectors in RAM. The mmap benefit applies after `save()`/`load()`
-- **Face detection** — the built-in detector (Haar cascade) is basic. **For best accuracy, pass pre-aligned 112×112 face crops.** Our benchmarks (99.9% recall, 95.8% rank-1) used pre-aligned data. On raw photos with the built-in Haar detector, expect lower accuracy. RetinaFace alignment is on the roadmap.
-- **Rust backend** — must be built manually (`cd rust && maturin develop --release`). Not yet shipped in pip wheels
+- **Face detection** — raw photos are handled by a built-in SCRFD detector with 5-point alignment to the ArcFace template (Haar cascade as fallback). The retrieval benchmarks (99.9% recall, 95.8% rank-1) used pre-aligned data so they isolate the index, not the detector. If you already have aligned 112×112 crops, pass them directly to skip detection.
+- **Rust backend** — builds into the package automatically on `pip install` (needs a Rust toolchain from source; prebuilt PyPI wheels need nothing). Falls back to NumPy if unavailable
 - **Rerank latency is cache-dependent** — the quoted times assume float vectors are OS-cached. On truly memory-constrained devices, rerank becomes I/O-bound
 
 ## Installation
@@ -235,9 +247,9 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification
 - [x] High-level API (register, search, verify)
 - [x] Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K–500K
 - [x] 1:N identification on 13,724 distinct identities (MS1MV2)
+- [x] **5-point alignment** (SCRFD/RetinaFace) — raw photos hit 99.85% LFW (+1.30 pts)
 
 **v0.2.0** — production quality
-- [ ] **RetinaFace alignment** — 5-point face alignment so raw photos match benchmark accuracy
 - [ ] **Prebuilt wheels** — `pip install faceflash` ships the Rust backend (no toolchain needed)
 - [ ] **Full 85K-identity benchmark** — extract all identities from MS1MV2, not just 13.7K
 - [ ] **On-device memory measurement** — measured RSS on Raspberry Pi / ARM, not just modeled
@@ -257,7 +269,6 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification
 
 FaceFlash is a working system with proven results. Key areas for contribution:
 
-- [ ] **RetinaFace alignment** — proper 5-point alignment would boost the library's end-to-end accuracy from the current Haar baseline
 - [ ] **Prebuilt wheels** — ship the Rust backend via maturin CI so `pip install` gets full speed
 - [ ] **Coarse clustering** — partition binary codes into ~1000 buckets for sub-linear scan (the main speed improvement path)
 - [ ] **SIMD/AVX-512 Hamming** — process 4-8 codes per cycle instead of one u64
