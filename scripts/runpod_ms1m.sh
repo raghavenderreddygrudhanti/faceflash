@@ -9,9 +9,10 @@
 #  safe to run after runpod_full.sh too.)
 #
 # REQUIRES (set in your terminal — NEVER commit these):
-#   export GITHUB_TOKEN=<your-github-token>     # private repo needs this
-#   export KAGGLE_USERNAME=<your-kaggle-username>
-#   export KAGGLE_KEY=<your-kaggle-key>
+#   export GITHUB_TOKEN=<your-github-token>     # private repo + push results
+#   export HF_TOKEN=<your-hf-token>             # pull/push embeddings (private HF dataset)
+#   export KAGGLE_USERNAME=<your-kaggle-username>   # only if embeddings NOT on HF
+#   export KAGGLE_KEY=<your-kaggle-key>             # (HF pull skips Kaggle + extraction)
 #
 # ONE command on a fresh RunPod terminal:
 #   export GITHUB_TOKEN=ghp_xxx KAGGLE_USERNAME=you KAGGLE_KEY=key
@@ -94,14 +95,18 @@ log "  ✓ Setup complete"
 log ""
 
 # ─────────────────────────────────────────────────────────────────────────
-# Step 1: Download MS1MV2 from Kaggle
+# Step 1: Get MS1MV2 embeddings — prefer HuggingFace, fall back to Kaggle+extract
 # ─────────────────────────────────────────────────────────────────────────
 MS1M_DIR="data/ms1m"
 MS1M_OUT="data/ms1m_embeddings.npy"
+EXTRACTED_FRESH=0
 
 if [ -f "$MS1M_OUT" ]; then
-    log "  ✓ MS1MV2 embeddings already exist — skipping download+extraction"
+    log "  ✓ MS1MV2 embeddings already present locally"
+elif { python scripts/hf_sync.py download 2>&1 | tee -a "$LOG_FILE"; [ -f "$MS1M_OUT" ]; }; then
+    log "  ✓ Pulled embeddings from HuggingFace — skipped Kaggle download + GPU extraction"
 else
+    log "  Embeddings not on HF — extracting from MS1MV2 (Kaggle)..."
     if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
         log "  ✗ KAGGLE_USERNAME and KAGGLE_KEY must be set!"
         log "    export KAGGLE_USERNAME=<your-kaggle-username>"
@@ -160,6 +165,13 @@ else
         log "  ✗ MS1MV2 extraction failed!"
         exit 1
     fi
+    EXTRACTED_FRESH=1
+fi
+
+# Push freshly-extracted embeddings to HuggingFace so future runs skip extraction
+if [ "$EXTRACTED_FRESH" = "1" ]; then
+    log "  Uploading new embeddings to HuggingFace for future runs..."
+    python scripts/hf_sync.py upload 2>&1 | tee -a "$LOG_FILE" || log "  (HF upload skipped — set HF_TOKEN with write access)"
 fi
 
 log ""
