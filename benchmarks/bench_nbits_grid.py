@@ -26,7 +26,10 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from faceflash.pca_quantize import PCABinaryQuantizer, backend_info
-import faceflash_core
+try:
+    from faceflash import _core as faceflash_core
+except ImportError:
+    import faceflash_core
 
 try:
     import faiss

@@ -40,10 +40,14 @@ from faceflash.pca_quantize import PCABinaryQuantizer, backend_info
 
 # Optional imports — gracefully skip what's not installed
 try:
-    import faceflash_core
+    from faceflash import _core as faceflash_core
     HAS_RUST = True
 except ImportError:
-    HAS_RUST = False
+    try:
+        import faceflash_core
+        HAS_RUST = True
+    except ImportError:
+        HAS_RUST = False
 
 try:
     import faiss

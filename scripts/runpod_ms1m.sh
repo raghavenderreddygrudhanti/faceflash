@@ -64,20 +64,22 @@ source .venv/bin/activate || { log "  ✗ venv activation failed"; exit 1; }
 
 # python deps (idempotent; fast if already installed)
 log "  Installing Python packages..."
-pip install -q numpy pillow tqdm faiss-cpu hnswlib usearch datasets huggingface-hub maturin matplotlib kaggle 2>&1 | tail -3
+pip install -q numpy pillow tqdm opencv-python-headless faiss-cpu hnswlib usearch datasets huggingface-hub maturin matplotlib kaggle 2>&1 | tail -3
+pip install -q scann 2>/dev/null || log "  (ScaNN unavailable on this platform — ANN comparison will skip it)"
 log "  Installing onnxruntime-gpu (CUDA 12)..."
 pip install -q onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ 2>&1 | tail -3
 
-# Rust backend (POPCNT) — build only if not importable
-if ! python -c "import faceflash_core" 2>/dev/null; then
-    log "  Building Rust backend..."
+# Rust backend (POPCNT) — maturin builds faceflash._core into the package.
+# Run from repo root (where pyproject.toml lives), NOT from rust/.
+if ! python -c "from faceflash import _core" 2>/dev/null; then
+    log "  Building Rust backend (maturin develop)..."
     if ! command -v cargo &>/dev/null; then
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         source "$HOME/.cargo/env"
     fi
-    (cd rust && maturin develop --release 2>&1 | tail -3)
+    maturin develop --release 2>&1 | tail -3
 fi
-python -c "import faceflash_core" 2>/dev/null || { log "  ✗ Rust backend failed to build — cannot benchmark"; exit 1; }
+python -c "from faceflash import _core" 2>/dev/null || { log "  ✗ Rust backend failed to build — cannot benchmark"; exit 1; }
 log "  ✓ Rust backend ready"
 
 # ArcFace model
