@@ -1,5 +1,9 @@
 # FaceFlash
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
+[![Rust POPCNT](https://img.shields.io/badge/backend-Rust%20POPCNT-orange.svg)](rust/)
+
 **Face search that fits in a megabyte.**
 
 Search 13,000 distinct people in 0.84 MB. Search 500,000 faces in 30 MB.
@@ -11,8 +15,8 @@ pip install faceflash
 
 ## At a Glance
 
-|  | FaceFlash | Best alternative |
-|--|-----------|------------------|
+|  | FaceFlash | HNSWLIB (best competitor) |
+|--|-----------|--------------------------|
 | Find the right person (rank-1) | **95.8%** | 95.7% (exact ceiling) |
 | Memory for 13,724 people | **0.84 MB** | 293 MB |
 | Memory for 500K faces | **30 MB** | 1,465 MB |
@@ -214,3 +218,7 @@ FaceFlash is a working system with proven results. Key areas for contribution:
 ## License
 
 MIT
+
+---
+
+If this is useful, a star helps others find it.
