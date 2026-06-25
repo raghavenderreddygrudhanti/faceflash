@@ -11,17 +11,21 @@ use rayon::prelude::*;
 /// the compiler still lowers `count_ones` to a hardware POPCNT.
 #[inline(always)]
 fn hamming_u64(a: &[u8], b: &[u8]) -> u32 {
+    let n_u64 = a.len() / 8;
+    let pa = a.as_ptr() as *const u64;
+    let pb = b.as_ptr() as *const u64;
     let mut dist: u32 = 0;
-    let mut ca = a.chunks_exact(8);
-    let mut cb = b.chunks_exact(8);
-    for (wa, wb) in ca.by_ref().zip(cb.by_ref()) {
-        let x = u64::from_le_bytes(wa.try_into().unwrap());
-        let y = u64::from_le_bytes(wb.try_into().unwrap());
+    // read_unaligned is sound at ANY alignment (no UB on ARM) and lowers to a
+    // single load on x86 — recovers the speed of the old (UB-prone) cast.
+    // SAFETY: i < n_u64 = len/8, so each read of 8 bytes stays within the slice.
+    for i in 0..n_u64 {
+        let x = unsafe { pa.add(i).read_unaligned() };
+        let y = unsafe { pb.add(i).read_unaligned() };
         dist += (x ^ y).count_ones();
     }
     // Remaining bytes (when length is not a multiple of 8)
-    for (xa, xb) in ca.remainder().iter().zip(cb.remainder().iter()) {
-        dist += (xa ^ xb).count_ones();
+    for i in (n_u64 * 8)..a.len() {
+        dist += (a[i] ^ b[i]).count_ones();
     }
     dist
 }
