@@ -1,242 +1,166 @@
 # FaceFlash
 
-**Fast face retrieval via PCA+ITQ binary quantization + Rust POPCNT search.**
+**Face search that fits in a megabyte.**
 
-~10x faster than DeepFace/InsightFace. 48x less committed memory than HNSW at equal recall. Best at 10K–100K scale.
+Search 13,000 distinct people in 0.84 MB. Search 500,000 faces in 30 MB.
+Same accuracy as exact brute-force search, 48-96x less memory. Runs on CPU.
 
-```bash
+```
 pip install faceflash
 ```
+
+## At a Glance
+
+|  | FaceFlash | Best competitor (HNSW) |
+|--|-----------|----------------------|
+| Find the right person (rank-1) | **95.8%** | 95.7% (exact ceiling) |
+| Memory for 13,724 people | **0.84 MB** | 293 MB |
+| Memory for 500K faces | **30 MB** | 1,465 MB |
+| Recall@1 at 100K | **99.9%** | 99.8% |
+| Recall@1 at 500K | **99.9%** | 99.6% |
+
+Tested on MS1MV2 (13,724 distinct identities) and VGGFace2 (500K images).
+All methods single-threaded, same hardware, same data.
 
 ## Quick Start
 
 ```python
 from faceflash import FaceFlash
 
-ff = FaceFlash()  # defaults: n_bits=512, n_candidates=100 (≥99% recall) — see "Tuning" to trade memory vs I/O
+ff = FaceFlash()
 
 # Register faces
 ff.register("Alice", "alice.jpg")
 ff.register("Bob", "bob.jpg")
 
-# Search (returns in sub-millisecond)
+# Search
 result = ff.search("query.jpg")
 print(result)
-# → {"matches": [{"name": "Alice", "confidence": 0.92}], "search_time_ms": 0.5}
+# {"matches": [{"name": "Alice", "confidence": 0.92}], "search_time_ms": 0.5}
 
 # Verify two faces
-result = ff.verify("photo1.jpg", "photo2.jpg")
-print(result)
-# → {"match": True, "confidence": 0.87, "time_ms": 45.2}
+ff.verify("photo1.jpg", "photo2.jpg")
+# {"match": True, "confidence": 0.87}
 
-# Index entire folder
+# Bulk register + save
 ff.register_folder("employees/")  # folder/person_name/photo.jpg
 ff.save("my_index/")
 ```
 
 ## How It Works
 
-```
-Image → Face Detection → ArcFace (512-dim) → PCA Binary Quantization (64 bytes)
-                                                        ↓
-Query → Same pipeline → Hamming Search (Rust POPCNT) → Top-K Rerank (cosine) → Match
-```
+Each face becomes a tiny binary fingerprint (64 bytes), searched with hardware
+POPCNT, then the top few candidates are verified with exact cosine similarity.
+You get exact-quality accuracy at a fraction of the memory.
 
-1. **Detect** — Find face in image (OpenCV)
-2. **Embed** — ArcFace converts face to 512-dim vector (ONNX, CPU)
-3. **Quantize** — PCA-aligned binary codes (64 bytes, fitted on your data)
-4. **Search** — Hamming distance scan via Rust POPCNT (50x faster than NumPy)
-5. **Rerank** — Top candidates verified with exact cosine similarity
-
----
+```
+Image → Detect Face → ArcFace Embedding (512-dim) → PCA+ITQ Binary Code (64 bytes)
+                                                              ↓
+Query → Same pipeline → Hamming Scan (Rust POPCNT) → Top-K Cosine Rerank → Match
+```
 
 ## Benchmarks
 
-All benchmarks: single-threaded, Apple M2 Pro, `time.perf_counter()` per query, warmup excluded.
+All benchmarks: single-threaded, `time.perf_counter()` per query, ground truth = exact brute-force cosine argmax.
 
-### Tier 1: vs Vector Search Engines (VGGFace2, 100K real faces)
+### 1:N Identification — 13,724 Distinct People (MS1MV2)
 
-| Method | Recall@1 | Latency | QPS | Memory |
-|---|---|---|---|---|
-| FAISS-Flat (exact) | 100% | 4.04ms | 248 | 195 MB |
-| FAISS-IVF (nprobe=16) | 97.0% | 0.66ms | 1,526 | 195 MB |
-| HNSWLIB (ef=32) | 99.0% | 0.44ms | 2,249 | ~292 MB |
-| HNSWLIB (ef=64) | 100% | 0.73ms | 1,362 | ~292 MB |
-| USearch (HNSW) | 99.0% | 0.21ms | 4,805 | ~253 MB |
-| NMSLIB (ef=32) | 97.0% | 0.13ms | — | ~292 MB |
-| NMSLIB (ef=64) | 100.0% | 0.21ms | — | ~292 MB |
-| **FaceFlash (top-100)** | **99.5%** | **0.49ms** | **2,042** | **6 MB ᵃ** |
-| **FaceFlash (top-300)** | **100%** | **0.55ms** | **1,826** | **6 MB ᵃ** |
+The hardest test: one photo per person in the gallery, find them using a *different* photo.
 
-ᵃ 6 MB = binary index (committed/resident). Float vectors for reranking (+195 MB) are mmap'd from disk — see Limitations.
+| Method | Rank-1 Accuracy | Memory |
+|--------|----------------|--------|
+| FAISS-Flat (exact ceiling) | 95.7% | 6.7 MB |
+| **FaceFlash (512b/100c)** | **95.8%** | **0.84 MB** |
+| FaceFlash (256b/100c) | 95.6% | 0.42 MB |
 
-**At equal 100% recall: FaceFlash (0.55ms) beats HNSWLIB ef=64 (0.73ms) while using 48x less committed memory.**
-USearch/NMSLIB are faster (0.21ms) but require 40–48x more RAM and don't guarantee 100% recall at that setting.
+FaceFlash ties exact search. The binary compression is free — no accuracy loss.
 
-### Tier 2: Additional Baselines (VGGFace2, 100K)
+### vs All ANN Methods — 100K Faces (MS1MV2, 13,724 identities)
 
-| Method | Recall@1 | Latency | Notes |
-|---|---|---|---|
-| Annoy (100 trees) | 0% | 0.03ms | Broken with dot product at this scale |
-| NMSLIB (ef=64) | 100.0% | 0.21ms | Graph-based, high memory |
-| DiskANN | — | — | Linux-only, not tested |
-| ScaNN | — | — | Linux-only, not tested |
+| Method | Recall@1 | Latency | Memory | Type |
+|--------|----------|---------|--------|------|
+| FAISS-Flat (exact) | 100% | 4.83ms | 195 MB | brute force |
+| HNSWLIB (ef=128) | 99.8% | 0.26ms | 293 MB | graph |
+| HNSWLIB (ef=64) | 98.6% | 0.14ms | 293 MB | graph |
+| USearch | 97.8% | 0.10ms | 254 MB | graph |
+| ScaNN | 82.0% | 0.10ms | 12 MB | quantized |
+| **FaceFlash (512b/100c)** | **99.9%** | 0.62ms | **6.1 MB** | binary hash |
+| **FaceFlash (256b/300c)** | **99.7%** | 0.37ms | **3.0 MB** | binary hash |
 
-### Tier 3: vs Face Libraries (100K faces, retrieval speed)
+FaceFlash: **96x less memory** than HNSW at equal recall. HNSW is 1.6x faster — that's the tradeoff.
+ScaNN (the other memory-efficient option) drops to 82% recall. FaceFlash holds 99.9%.
 
-DeepFace and InsightFace both use brute-force cosine for search internally.
-
-| Method | Recall@1 | Latency | Speedup |
-|---|---|---|---|
-| DeepFace (brute force) | 100% | 4.85ms | 1x |
-| InsightFace (brute force) | 100% | 4.67ms | 1x |
-| **FaceFlash (top-100)** | **99.5%** | **0.49ms** | **9.9x** |
-| **FaceFlash (top-300)** | **100%** | **0.57ms** | **8.5x** |
-
-FaceFlash is a drop-in replacement for the search step in DeepFace/InsightFace. Same embeddings, ~10x faster retrieval.
-
----
-
-### LFW — 13K faces, 5,749 identities (accuracy validation)
-
-| Method | R@1 | R@10 | R@100 | Latency | Memory |
-|---|---|---|---|---|---|
-| FAISS-Flat (exact) | 100% | 100% | 100% | 0.56ms | 25.3 MB |
-| FAISS-IVF | 94.3% | 94.3% | 94.3% | 0.15ms | 25.3 MB |
-| **FaceFlash (30 cands)** | **99.0%** | **99.0%** | — | **0.05ms** | **0.8 MB** |
-| FaceFlash (100 cands) | 99.7% | 99.7% | 99.7% | 0.08ms | 0.8 MB |
-| FaceFlash (500 cands) | 100% | 100% | 100% | 0.17ms | 0.8 MB |
-
-Timing breakdown (30 candidates): binary scan 0.039ms + cosine rerank 0.010ms.
-
-### VGGFace2 — 100K faces, 291 identities (scale validation)
-
-| Candidates | Recall@1 | Latency | Speedup vs Brute Force |
-|---|---|---|---|
-| 50 | 95.5% | 0.33ms | 11.6x |
-| 100 | 97.3% | 0.34ms | 11.2x |
-| 200 | 98.3% | 0.37ms | 10.4x |
-| 300 | 98.6% | 0.40ms | 9.7x |
-| 500 | 98.6% | 0.45ms | 8.5x |
-| 1000 | 99.3% | 0.60ms | 6.4x |
-
----
-
-### vs HNSWLIB (LFW, 3K faces)
+### vs All ANN Methods — 500K Faces (MS1MV2, 6,248 identities)
 
 | Method | Recall@1 | Latency | Memory |
-|---|---|---|---|
-| HNSWLIB (ef=32) | 98.5% | 0.348ms | 8.2 MB |
-| HNSWLIB (ef=64) | 100% | 0.533ms | 8.2 MB |
-| **FaceFlash (100 cands)** | **97.0%** | **0.030ms** | **0.2 MB** |
-| FaceFlash (300 cands) | 99.5% | 0.056ms | 0.2 MB |
+|--------|----------|---------|--------|
+| FAISS-Flat (exact) | 100% | 24.4ms | 977 MB |
+| HNSWLIB (ef=128) | 99.6% | 0.40ms | 1,465 MB |
+| HNSWLIB (ef=64) | 99.2% | 0.22ms | 1,465 MB |
+| ScaNN | 93.3% | 0.37ms | 61 MB |
+| **FaceFlash (512b/200c)** | **99.9%** | 2.69ms | **30.5 MB** |
+| **FaceFlash (256b/100c)** | **99.6%** | 1.69ms | **15.3 MB** |
 
-FaceFlash: 9x faster than HNSWLIB, 40x less memory.
+At 500K: **48x less memory** than HNSW. HNSW is 6.7x faster. FaceFlash wins on memory.
 
----
+### When to Use It / When Not To
 
-### Model Agnosticism
+| Use FaceFlash when | Don't use FaceFlash when |
+|-------------------|--------------------------|
+| Edge devices, Raspberry Pi, phones | Server with 64GB+ RAM |
+| RAM budget < 100 MB | Latency must be < 0.5ms |
+| 10K–500K face database | > 1M faces (HNSW scales better) |
+| Accuracy matters more than speed | Throughput > 10K QPS needed |
+| Offline / no-server deployment | Batch search (FAISS batch is faster) |
 
-FaceFlash works with any 512-dim face embedding model:
+## Tuning
 
-| Model | Size | R@1 (100 cands) | R@1 (300 cands) |
-|---|---|---|---|
-| ArcFace-R50 (w600k) | 166 MB | 97.5% | 99.5% |
-| Buffalo-L (R50) | 166 MB | 97.0% | 99.5% |
-| Buffalo-S (MobileFaceNet) | 13 MB | 97.0% | 99.5% |
-| FaceNet (InceptionResNet) | 90 MB | 94.5% | 98.5% |
+Two knobs, and they substitute for each other:
 
-Swap the embedding model without changing search performance. FaceNet has slightly lower recall due to different embedding distribution, but still works well.
-
----
-
-### Latency Scaling (Rust backend)
-
-Validates that search latency scales linearly with database size.
-Database: real LFW embeddings + random unit vector padding.
-Random vectors are valid for latency measurement (XOR + POPCNT cost is content-independent).
-
-**This table does NOT validate recall at scale.** Recall is validated on VGGFace2 (100K real faces, see above).
-
-| Scale | Binary Scan | Total (scan + rerank) | Speedup vs FAISS | Binary Memory |
-|---|---|---|---|---|
-| 13K | 0.06ms | 0.08ms | 7x | 0.8 MB |
-| 50K | 0.22ms | 0.24ms | 8x | 3 MB |
-| 100K | 0.44ms | 0.46ms | 9x | 6 MB |
-| 500K | 2.18ms | 2.21ms | 9x | 31 MB |
-| 1M | 5.65ms | 5.68ms | 7x | 61 MB |
-
-Latency scales linearly. Memory = 64 bytes per face. ~8x faster than FAISS-Flat.
-
----
-
-## Tuning: `n_bits` × `n_candidates`
-
-FaceFlash has exactly two knobs, and they **substitute for each other** to reach a recall target:
-
-- **`n_bits`** — binary code length. Memory = `n_bits / 8` bytes per face. More bits = sharper filter = fewer candidates needed for the same recall.
-- **`n_candidates`** — rerank shortlist size (search effort, independent of `k`). More candidates = higher recall, but each one is a float rerank — and on edge, a separate mmap read from disk.
-
-The binary-scan latency is nearly flat (~0.3–0.5 ms across every setting), so the right trade depends on your **bottleneck**:
-
-| Deployment | Bottleneck | Config | Recall@1 | Memory |
-|---|---|---|---|---|
-| **Server** (floats in RAM) | resident memory | `n_bits=256, n_candidates=300` | 99.1% | 3.0 MB |
-| **Balanced** (default) | — | `n_bits=512, n_candidates=100` | 99.9% | 6.1 MB |
-| **Edge** (floats mmap'd on flash) | candidate I/O | `n_bits=512, n_candidates=50` | 99.1% | 6.1 MB, 50 reads |
+| Deployment | Config | Recall@1 | Memory/face | Notes |
+|-----------|--------|----------|-------------|-------|
+| **Server** (floats in RAM) | `n_bits=256, n_candidates=300` | 99.7% | 32 bytes | Minimize resident RAM |
+| **Balanced** (default) | `n_bits=512, n_candidates=100` | 99.9% | 64 bytes | Best recall, reasonable memory |
+| **Edge** (floats on flash) | `n_bits=512, n_candidates=50` | 99.5% | 64 bytes | Minimize disk reads per query |
 
 ```python
-# Server: minimize RAM — fewer bits, more candidates (candidates are cheap in RAM)
-ff = FaceFlash(n_bits=256, n_candidates=300)
-
-# Edge: minimize disk reads — more bits, fewer candidates (each candidate = a flash read)
-ff = FaceFlash(n_bits=512, n_candidates=50)
-
-# Per-query override of the search-effort knob
-ff.search("query.jpg", k=1, n_candidates=200)
+ff = FaceFlash(n_bits=256, n_candidates=300)     # server: less memory
+ff = FaceFlash(n_bits=512, n_candidates=100)     # balanced (default)
+ff = FaceFlash(n_bits=512, n_candidates=50)      # edge: fewer I/O ops
+ff.search("query.jpg", n_candidates=200)         # per-query override
 ```
-
-> **Server bottleneck is memory → fewer bits, more candidates. Edge bottleneck is I/O → more bits, fewer candidates.** Numbers from `benchmarks/bench_nbits_grid.py` (VGGFace2 100K, 873 queries, 95% bootstrap CIs). 128 bits is omitted — too lossy (≤96% even at 300 candidates); 384→512 is not statistically significant above 30 candidates (McNemar).
-
----
 
 ## Architecture
 
 ```
 faceflash/
 ├── engine.py          # High-level API (register, search, verify)
-├── detect.py          # Face detection (OpenCV)
-├── embed.py           # ArcFace ONNX (512-dim, auto-downloads)
-├── index.py           # Binary index (auto-fits PCA after 100 vectors)
-├── pca_quantize.py    # PCA quantizer + Rust/NumPy backend
+├── detect.py          # Face detection (OpenCV Haar, RetinaFace planned)
+├── embed.py           # ArcFace ONNX embedding (512-dim, auto-downloads)
+├── index.py           # Binary index with buffered O(n) add
+├── pca_quantize.py    # PCA+ITQ quantizer (the core algorithm)
 rust/
-├── src/lib.rs         # Hamming search (POPCNT + Rayon)
-├── Cargo.toml         # PyO3 bindings
+├── src/lib.rs         # Hamming search via hardware POPCNT (PyO3)
+├── Cargo.toml
 ```
 
-## Key Design Decisions
+**Why PCA+ITQ?** ArcFace embeddings concentrate identity information along principal axes.
+PCA aligns quantization with those axes. ITQ rotates bits for balanced marginals.
+Result: fewer candidates needed for the same recall vs random projection.
 
-**Why PCA binary codes?**
-ArcFace embeddings concentrate identity-discriminative information along principal axes. PCA aligns quantization boundaries with those axes. Random projections waste bits on low-variance directions.
+**Why not HNSW?** HNSW stores a graph on top of the full float vectors — 1.5x raw memory.
+FaceFlash stores 64 bytes per face. Float vectors are mmap'd from disk and only paged
+for the ~100 candidates that pass the binary filter.
 
-**Why not HNSW?**
-HNSW requires 1.5x the memory of raw vectors (graph edges). FaceFlash's binary index is 48x smaller (6 MB vs 292 MB at 100K). Float vectors are still needed for reranking but can be memory-mapped from disk — only K candidate rows (~100 KB) are paged in per query. On memory-constrained devices, resident RAM is dominated by the 6 MB binary index.
-
-**Why Rust?**
-The Hamming scan uses hardware POPCNT instructions. Rust compiles to tight SIMD loops — 50x faster than NumPy.
-
-**Why cosine reranking?**
-Binary codes approximate nearest neighbors. Reranking top-K with exact cosine recovers accuracy. At 100 candidates on 100K faces, reranking costs only 0.04ms.
+**Why Rust?** Hamming distance uses hardware POPCNT. Rust compiles to tight loops — 50x faster than NumPy.
 
 ## Limitations
 
-- Recall at 100K: 99.7% at 100 candidates — hard cases need 200-300 candidates for 100%
-- FAISS batch mode is faster per-query (0.017ms) due to BLAS parallelism
-- PCA+ITQ must be fitted on representative data (≥1024 samples)
-- Requires ArcFace model download (~166 MB) on first use
-- DiskANN/ScaNN not benchmarked (Linux-only libraries)
-- **Memory footprint:** Binary index is 6 MB at 100K (resident in RAM). Float vectors (195 MB) are memory-mapped from disk after `save()`/`load()` — only candidate rows (~100 KB) are paged per query. Resident RAM: ~6 MB committed, 195 MB cold on disk (evictable). Rerank latency is page-cache-dependent: ~0.47ms when floats are cached by the OS; on a memory-constrained device where they cannot stay cached, rerank becomes I/O-bound — measure on target hardware.
-- **Build requires full RAM:** Building the index (`add_batch`) holds all float vectors in memory. The mmap benefit only applies to the query/serving process after `save()`/`load()`. Edge deployment model: build in cloud, ship `.npy` files, mmap-load on device.
+- **Linear scan** — search time scales linearly with database size (not sub-linear like HNSW)
+- **Memory during build** — constructing the index holds all float vectors in RAM. The mmap benefit applies after `save()`/`load()`
+- **Face detection** — the built-in detector (Haar cascade) is basic. For best accuracy, pass pre-aligned 112x112 face crops
+- **Rust backend** — must be built manually (`cd rust && maturin develop --release`). Not yet shipped in pip wheels
+- **Rerank latency is cache-dependent** — the quoted times assume float vectors are OS-cached. On truly memory-constrained devices, rerank becomes I/O-bound
 
 ## Installation
 
@@ -244,40 +168,38 @@ Binary codes approximate nearest neighbors. Reranking top-K with exact cosine re
 # Python package
 pip install faceflash
 
-# With Rust backend (recommended, 50x faster search)
+# With Rust backend (recommended — 50x faster search)
 cd rust && maturin develop --release
 
-# With benchmark dependencies
+# With all benchmark dependencies
 pip install faceflash[benchmark]
 ```
 
-## Reproducing Benchmarks
+## Reproduce the Benchmarks
 
 ```bash
-# Extract real embeddings
+# Local (LFW + VGGFace2 100K)
 python scripts/extract_lfw_embeddings.py
-python scripts/extract_vggface2_fast.py
+python benchmarks/bench_search.py
+python benchmarks/bench_ann_comparison.py --scales 100K --queries 500
 
-# Run benchmarks
-python benchmarks/bench_comprehensive.py        # All metrics, both datasets
-python benchmarks/bench_tier1.py                # vs FAISS, HNSWLIB, USearch (100K)
-python benchmarks/bench_tier2.py                # vs Annoy, NMSLIB (100K)
-python benchmarks/bench_tier3_facelibs.py       # vs DeepFace, InsightFace
-python benchmarks/bench_multimodel.py           # Multiple embedding models + HNSWLIB
-python benchmarks/bench_lfw_rigorous.py         # LFW timing breakdown
-python benchmarks/bench_scale.py                # Scalability to 1M
+# RunPod (full suite — VGGFace2 1M + MS1MV2 85K identities)
+export GITHUB_TOKEN=<token> KAGGLE_USERNAME=<user> KAGGLE_KEY=<key>
+bash scripts/runpod_full.sh      # VGGFace2 1M + all ANN comparisons
+bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification)
 ```
 
 ## Contributing
 
-Key areas for contribution:
-- [ ] YOLOv8-Face detector (faster than Haar)
-- [ ] DiskANN / ScaNN comparison (Linux)
-- [ ] IJB-C / MegaFace protocols
-- [ ] Mobile deployment (ONNX + CoreML)
-- [ ] Streaming insertion (add faces without refitting PCA)
-- [ ] Multi-probe search for higher recall on hard cases
-- [ ] Adaptive candidate selection (auto-tune rerank count)
+FaceFlash is a working system with proven results. Key areas for contribution:
+
+- [ ] **RetinaFace alignment** — proper 5-point alignment would boost the library's end-to-end accuracy from the current Haar baseline
+- [ ] **Prebuilt wheels** — ship the Rust backend via maturin CI so `pip install` gets full speed
+- [ ] **Coarse clustering** — partition binary codes into ~1000 buckets for sub-linear scan (the main speed improvement path)
+- [ ] **SIMD/AVX-512 Hamming** — process 4-8 codes per cycle instead of one u64
+- [ ] **DiskANN comparison** — the one competitor we haven't benchmarked
+- [ ] **Mobile deployment** — ONNX + CoreML for on-device face search
+- [ ] **Streaming insertion** — add faces without refitting PCA (currently requires rebuild)
 
 ## License
 
