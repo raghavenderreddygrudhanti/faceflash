@@ -9,7 +9,7 @@
 
 **Face search that fits in a megabyte.**
 
-Search 13,000 distinct people in 0.84 MB. Search 500,000 faces in 30 MB.
+Search 45,000 distinct people in 2.8 MB. Search 500,000 faces in 30 MB.
 Same accuracy as exact brute-force search, 48-96x less memory. Runs on CPU.
 
 ```
@@ -20,13 +20,13 @@ pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/f
 
 |  | FaceFlash | HNSWLIB (best competitor) |
 |--|-----------|--------------------------|
-| Find the right person (rank-1) | **95.8%** | 95.7% (exact ceiling) |
+| Find the right person (rank-1) | **95.8%** | 95.8% (exact ceiling) |
 | Memory for 100K faces | **3 MB** | 293 MB |
 | Memory for 500K faces | **30 MB** | 1,465 MB |
 | Recall@1 at 100K | **99.9%** | 99.5% |
 | Recall@1 at 500K | **99.9%** | 99.5% |
 
-Tested on MS1MV2 (13,724 distinct identities) and VGGFace2 (500K images).
+Tested on MS1MV2 (45,832 distinct identities) and VGGFace2 (500K images).
 All methods single-threaded, same hardware, same data.
 
 > **Memory = binary index only.** Float vectors for reranking are mmap'd from disk after `save()`/`load()` — only ~100 candidate rows are paged per query. See [Limitations](#limitations) for details.
@@ -94,21 +94,21 @@ Query → Same pipeline → Hamming Scan (Rust POPCNT) → Top-K Cosine Rerank �
 
 All benchmarks: single-threaded, `time.perf_counter()` per query, ground truth = exact brute-force cosine argmax.
 
-### 1:N Identification — 13,724 Distinct People (MS1MV2)
+### 1:N Identification — 45,832 Distinct People (MS1MV2)
 
-The hardest test: one photo per person in the gallery, find them using a *different* photo.
+The hardest test: one photo per person in the gallery, find them using a *different* photo. Gallery of 45,832 identities, 5,000 probes.
 
-![Rank-1 identification ties exact search on 13,724 distinct people](docs/figures/chart_rank1_tie.png)
+![Rank-1 identification ties exact search on 45,832 distinct people](docs/figures/chart_rank1_tie.png)
 
 | Method | Rank-1 Accuracy | Memory |
 |--------|----------------|--------|
-| FAISS-Flat (exact ceiling) | 95.7% | 26.8 MB |
-| **FaceFlash (512b/100c)** | **95.8%** | **0.84 MB** |
-| FaceFlash (256b/100c) | 95.6% | 0.42 MB |
+| FAISS-Flat (exact ceiling) | 95.8% | 93.9 MB |
+| **FaceFlash (512b/100c)** | **95.8%** | **2.80 MB** |
+| FaceFlash (256b/100c) | 95.7% | 1.40 MB |
 
-FaceFlash ties exact search using **32× less memory** — the binary compression is free, no accuracy loss.
+FaceFlash ties exact search using **34× less memory** — the binary compression is free, no accuracy loss. Tripling the gallery from 13.7K to 45.8K identities did not move rank-1.
 
-### vs All ANN Methods — 100K Faces (MS1MV2, 13,724 identities)
+### vs All ANN Methods — 100K Faces (MS1MV2, 8,540 identities)
 
 ![Recall vs memory — FaceFlash sits alone in the high-recall, low-memory corner](docs/figures/chart_recall_memory_pareto.png)
 
@@ -125,7 +125,7 @@ FaceFlash ties exact search using **32× less memory** — the binary compressio
 FaceFlash: **96x less memory** than HNSW at equal recall. HNSW is ~4x faster — that's the tradeoff.
 ScaNN (the other memory-efficient option) drops to 82% recall. FaceFlash holds 99.9%.
 
-### vs All ANN Methods — 500K Faces (MS1MV2, 6,248 identities)
+### vs All ANN Methods — 500K Faces (MS1MV2, 42,502 identities)
 
 | Method | Recall@1 | Latency | Memory |
 |--------|----------|---------|--------|
@@ -159,17 +159,32 @@ into ~√N buckets, and a query only scans the `n_probe` closest buckets.
 ff.index.build_clusters(n_probe=16)   # after registering faces
 ```
 
-Measured (100K vs 400K synthetic faces, Rust backend, single thread):
+Measured on **real MS1MV2 faces** (Rust backend, single thread). `n_probe` is the
+recall/speed knob — clustering trades recall for speed, so it's for when you can
+tolerate approximate results, not when you need exact recall:
 
-| Database | Full scan | Clustered (n_probe=16) | Speedup |
-|----------|-----------|------------------------|---------|
-| 100K | 0.68 ms | 0.25 ms | 2.7× |
-| 400K | 2.37 ms | 0.49 ms | 4.9× |
+**100K faces** (full scan: 100% recall @ 0.96 ms)
+
+| n_probe | Recall@1 | Latency | Speedup |
+|---------|----------|---------|---------|
+| 8  | 90.8% | 0.10 ms | 9.2× |
+| 16 | 95.2% | 0.15 ms | 6.5× |
+| 32 | 97.4% | 0.24 ms | 4.0× |
+| 64 | 99.0% | 0.45 ms | 2.1× |
+
+**500K faces** (full scan: 100% recall @ 4.58 ms)
+
+| n_probe | Recall@1 | Latency | Speedup |
+|---------|----------|---------|---------|
+| 16 | 84.2% | 0.41 ms | 11× |
+| 32 | 91.6% | 0.71 ms | 6.5× |
+| 64 | 95.5% | 1.44 ms | 3.2× |
 
 The speedup **widens as the database grows** — full scan slows ~linearly, clustered
-stays nearly flat. `n_probe` is the recall/speed knob: at 100K, n_probe=8 → ~95%
-recall, n_probe=32 → ~98%. Probe every bucket and you reproduce the exact full-scan
-result. Leave clustering off and search is unchanged.
+stays much flatter (32× faster at 500K, n_probe=4). The honest tradeoff: holding
+≥99% recall costs most of the speedup (~2× at 100K), while a tolerance for ~95%
+recall buys 6–11×. Probe every bucket and you reproduce the exact full-scan result;
+leave clustering off (the default) and search is unchanged.
 
 ### When to Use It / When Not To
 
@@ -259,7 +274,7 @@ python benchmarks/bench_ann_comparison.py --scales 100K --queries 500
 # RunPod (full suite — VGGFace2 1M + MS1MV2 85K identities)
 export GITHUB_TOKEN=<token> KAGGLE_USERNAME=<user> KAGGLE_KEY=<key>
 bash scripts/runpod_full.sh      # VGGFace2 1M + all ANN comparisons
-bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification)
+bash scripts/runpod_ms1m.sh      # MS1MV2 (1:N identification; FORCE_EXTRACT=1 for full 85K)
 ```
 
 ## Roadmap
@@ -268,13 +283,13 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification
 - [x] PCA+ITQ binary quantization + Rust POPCNT search
 - [x] High-level API (register, search, verify)
 - [x] Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K–500K
-- [x] 1:N identification on 13,724 distinct identities (MS1MV2)
+- [x] 1:N identification on 45,832 distinct identities (MS1MV2)
 - [x] **5-point alignment** (SCRFD/RetinaFace) — raw photos hit 99.85% LFW (+1.30 pts)
 
 **v0.2.0** — production quality
 - [x] **RetinaFace alignment** — 5-point face alignment so raw photos match benchmark accuracy
 - [x] **Prebuilt wheels** — `pip install faceflash` ships the Rust backend (no toolchain needed)
-- [ ] **Full 85K-identity benchmark** — extract all identities from MS1MV2, not just 13.7K
+- [ ] **Full 85K-identity benchmark** — extract all identities from MS1MV2 (currently 45.8K)
 - [ ] **On-device memory measurement** — measured RSS on Raspberry Pi / ARM, not just modeled
 
 **v0.3.0** — performance
