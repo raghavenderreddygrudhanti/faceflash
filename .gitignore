@@ -12,3 +12,11 @@ data/*.npy
 data/*.npz
 data/*.tgz
 data/lfw_funneled/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Temporary/stale result folders
+results 2/
+results3/
