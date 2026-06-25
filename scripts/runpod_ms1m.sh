@@ -67,8 +67,15 @@ source .venv/bin/activate || { log "  ✗ venv activation failed"; exit 1; }
 log "  Installing Python packages..."
 pip install -q numpy pillow tqdm opencv-python-headless faiss-cpu hnswlib usearch datasets huggingface-hub maturin matplotlib kaggle 2>&1 | tail -3
 pip install -q scann 2>/dev/null || log "  (ScaNN unavailable on this platform — ANN comparison will skip it)"
-log "  Installing onnxruntime-gpu (CUDA 12)..."
-pip install -q onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ 2>&1 | tail -3
+# onnxruntime: GPU build if a GPU is present, else CPU (works on cheap CPU pods
+# when embeddings come from HuggingFace and no 1M extraction is needed).
+if command -v nvidia-smi &>/dev/null; then
+    log "  GPU detected → installing onnxruntime-gpu (CUDA 12)..."
+    pip install -q onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/ 2>&1 | tail -3
+else
+    log "  No GPU detected → installing onnxruntime (CPU)..."
+    pip install -q onnxruntime 2>&1 | tail -3
+fi
 
 # Rust backend (POPCNT) — maturin builds faceflash._core into the package.
 # Run from repo root (where pyproject.toml lives), NOT from rust/.
