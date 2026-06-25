@@ -6,20 +6,22 @@ use pyo3::prelude::*;
 use rayon::prelude::*;
 
 /// Compute Hamming distance between two packed binary vectors.
-/// Uses u64 POPCNT for explicit hardware acceleration (not relying on autovectorization).
+/// Processes 8 bytes at a time via u64 POPCNT. Uses `chunks_exact` +
+/// `from_le_bytes` so reads are alignment-safe (no UB) and portable to ARM —
+/// the compiler still lowers `count_ones` to a hardware POPCNT.
 #[inline(always)]
 fn hamming_u64(a: &[u8], b: &[u8]) -> u32 {
-    let n_u64 = a.len() / 8;
-    let a_u64 = unsafe { std::slice::from_raw_parts(a.as_ptr() as *const u64, n_u64) };
-    let b_u64 = unsafe { std::slice::from_raw_parts(b.as_ptr() as *const u64, n_u64) };
-
     let mut dist: u32 = 0;
-    for i in 0..n_u64 {
-        dist += (a_u64[i] ^ b_u64[i]).count_ones();
+    let mut ca = a.chunks_exact(8);
+    let mut cb = b.chunks_exact(8);
+    for (wa, wb) in ca.by_ref().zip(cb.by_ref()) {
+        let x = u64::from_le_bytes(wa.try_into().unwrap());
+        let y = u64::from_le_bytes(wb.try_into().unwrap());
+        dist += (x ^ y).count_ones();
     }
-    // Handle remaining bytes (if length not multiple of 8)
-    for i in (n_u64 * 8)..a.len() {
-        dist += (a[i] ^ b[i]).count_ones();
+    // Remaining bytes (when length is not a multiple of 8)
+    for (xa, xb) in ca.remainder().iter().zip(cb.remainder().iter()) {
+        dist += (xa ^ xb).count_ones();
     }
     dist
 }
