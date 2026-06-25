@@ -151,8 +151,8 @@ else
     # truth; labels by folder position so any folder naming works).
     # ─────────────────────────────────────────────────────────────────────
     log ""
-    log "  Extracting ArcFace embeddings from MS1MV2 (target: 1M)..."
-    python scripts/extract_ms1m.py --ms1m-dir data/ms1m --target 1000000 2>&1 | tee -a "$LOG_FILE"
+    log "  Extracting ArcFace embeddings — ALL ~85K identities (up to 12 imgs each ≈ 1M)..."
+    python scripts/extract_ms1m.py --ms1m-dir data/ms1m --max-per-identity 12 2>&1 | tee -a "$LOG_FILE"
 
     if [ ! -f "$MS1M_OUT" ]; then
         log "  ✗ MS1MV2 extraction failed!"
@@ -179,6 +179,28 @@ log ""
 # ─────────────────────────────────────────────────────────────────────────
 log "  Running 1:N identification on MS1MV2 (sparse gallery)..."
 DATA_TAG=ms1m python benchmarks/bench_identification.py 2>&1 | tee -a "$LOG_FILE" || true
+
+log ""
+
+# ─────────────────────────────────────────────────────────────────────────
+# Step 4b: Alignment benchmark — Haar vs RetinaFace on RAW LFW images.
+# (The embedding benchmarks above use pre-aligned data; this is the only one
+#  that measures the alignment upgrade.)
+# ─────────────────────────────────────────────────────────────────────────
+log "  Running alignment benchmark (LFW: Haar vs RetinaFace)..."
+# SCRFD det_10g detector for RetinaFace alignment
+mkdir -p "$HOME/.faceflash/models"
+[ -f "$HOME/.faceflash/models/det_10g.onnx" ] || curl -sL \
+    -o "$HOME/.faceflash/models/det_10g.onnx" \
+    "https://huggingface.co/immich-app/buffalo_l/resolve/main/detection/model.onnx"
+# raw LFW funneled images + pairs
+if [ ! -f data/lfw_funneled/pairs.txt ]; then
+    log "  Downloading LFW funneled (~233MB)..."
+    mkdir -p data
+    curl -sL -o /tmp/lfw.tgz "https://vis-www.cs.umass.edu/lfw/lfw-funneled.tgz" && tar xzf /tmp/lfw.tgz -C data/
+    curl -sL -o data/lfw_funneled/pairs.txt "https://vis-www.cs.umass.edu/lfw/pairs.txt"
+fi
+python benchmarks/bench_alignment.py 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
 log "  ✓ MS1MV2 benchmarks complete"
@@ -209,7 +231,8 @@ log "  MS1MV2 BENCHMARK COMPLETE"
 log "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "   ➜ RESULTS FOLDER: $(pwd)/results"
-echo "       results/bench_ann_comparison_ms1m.json"
-echo "       results/bench_identification_ms1m.json"
+echo "       results/bench_ann_comparison_ms1m.json   (ANN, full 85K identities)"
+echo "       results/bench_identification_ms1m.json   (1:N rank-1, 85K gallery)"
+echo "       results/bench_alignment.json             (Haar vs RetinaFace, LFW)"
 echo "   ➜ BUNDLE (download this): ${BUNDLE}"
 echo "═══════════════════════════════════════════════════════════════"
