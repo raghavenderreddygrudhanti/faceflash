@@ -78,9 +78,9 @@ Query → Same pipeline → Hamming Scan (Rust POPCNT) → Top-K Cosine Rerank �
 
 |  | FaceFlash | FAISS-Flat | FAISS-IVF | HNSWLIB | USearch | ScaNN |
 |--|-----------|-----------|-----------|---------|---------|-------|
-| **Recall@1** | 99.9% | 100% | 99.8% | 99.8% | 97.8% | 82.0% |
-| **Latency** | 0.62ms | 4.83ms | 1.12ms | 0.26ms | 0.10ms | 0.10ms |
-| **Memory** | **6 MB** | 195 MB | 205 MB | 293 MB | 254 MB | 12 MB |
+| **Recall@1** | 99.9% | 100% | 99.8% | 99.5% | 97.4% | 81.5% |
+| **Latency** | 0.53ms | 4.92ms | 1.20ms | 0.24ms | 0.10ms | 0.10ms |
+| **Memory** | **3 MB** | 195 MB | 205 MB | 293 MB | 254 MB | 12 MB |
 | **Training** | None | None | Required | Required | Required | Required |
 | **GPU needed** | No | No | No | No | No | No |
 
@@ -114,15 +114,15 @@ FaceFlash ties exact search using **32× less memory** — the binary compressio
 
 | Method | Recall@1 | Latency | Memory | Type |
 |--------|----------|---------|--------|------|
-| FAISS-Flat (exact) | 100% | 4.83ms | 195 MB | brute force |
-| HNSWLIB (ef=128) | 99.8% | 0.26ms | 293 MB | graph |
-| HNSWLIB (ef=64) | 98.6% | 0.14ms | 293 MB | graph |
-| USearch | 97.8% | 0.10ms | 254 MB | graph |
-| ScaNN | 82.0% | 0.10ms | 12 MB | quantized |
-| **FaceFlash (512b/100c)** | **99.9%** | 0.62ms | **6.1 MB** | binary hash |
-| **FaceFlash (256b/300c)** | **99.7%** | 0.37ms | **3.0 MB** | binary hash |
+| FAISS-Flat (exact) | 100% | 4.92ms | 195 MB | brute force |
+| HNSWLIB (ef=128) | 99.5% | 0.24ms | 293 MB | graph |
+| HNSWLIB (ef=64) | 99.2% | 0.13ms | 293 MB | graph |
+| USearch | 97.4% | 0.10ms | 254 MB | graph |
+| ScaNN | 81.5% | 0.10ms | 12 MB | quantized |
+| **FaceFlash (512b/100c)** | **99.9%** | 0.95ms | **6.1 MB** | binary hash |
+| **FaceFlash (256b/300c)** | **99.7%** | 0.55ms | **3.0 MB** | binary hash |
 
-FaceFlash: **96x less memory** than HNSW at equal recall. HNSW is 1.6x faster — that's the tradeoff.
+FaceFlash: **96x less memory** than HNSW at equal recall. HNSW is ~4x faster — that's the tradeoff.
 ScaNN (the other memory-efficient option) drops to 82% recall. FaceFlash holds 99.9%.
 
 ### vs All ANN Methods — 500K Faces (MS1MV2, 6,248 identities)
