@@ -222,6 +222,16 @@ pip install -q scikit-learn 2>/dev/null
 python benchmarks/bench_alignment.py 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
+
+# ─────────────────────────────────────────────────────────────────────────
+# Step 4c: Coarse clustering (IVF) — validate sub-linear scan on REAL faces.
+# Full scan vs clustered recall@1 + latency, sweeping n_probe.
+# ─────────────────────────────────────────────────────────────────────────
+log "  Running coarse-clustering benchmark (full scan vs IVF, real MS1MV2)..."
+DATA_TAG=ms1m python benchmarks/bench_clustering.py --scales 100K,500K \
+    --queries 1000 2>&1 | tee -a "$LOG_FILE" || true
+
+log ""
 log "  ✓ MS1MV2 benchmarks complete"
 log ""
 
@@ -234,7 +244,7 @@ git config user.name "Raghavender Grudhanti"
 git add results/ 2>/dev/null || true
 
 if ! git diff --cached --quiet 2>/dev/null; then
-    git commit -q -m "bench: MS1MV2 results — 85K identities, ANN comparison + 1:N identification (${RUN_TS})" || true
+    git commit -q -m "bench: MS1MV2 results — ANN comparison + 1:N identification + clustering (${RUN_TS})" || true
     if [ -n "$GITHUB_TOKEN" ]; then
         git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REMOTE_SLUG}.git"
     fi
@@ -253,5 +263,6 @@ echo "   ➜ RESULTS FOLDER: $(pwd)/results"
 echo "       results/bench_ann_comparison_ms1m.json   (ANN, full 85K identities)"
 echo "       results/bench_identification_ms1m.json   (1:N rank-1, 85K gallery)"
 echo "       results/bench_alignment.json             (Haar vs RetinaFace, LFW)"
+echo "       results/bench_clustering.json            (full scan vs IVF clustering)"
 echo "   ➜ BUNDLE (download this): ${BUNDLE}"
 echo "═══════════════════════════════════════════════════════════════"
