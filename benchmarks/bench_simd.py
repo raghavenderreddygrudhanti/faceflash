@@ -20,6 +20,19 @@ n_bits = 512
 db = rng.integers(0, 256, (n_db, n_bits // 8), dtype=np.uint8)
 query = rng.integers(0, 256, n_bits // 8, dtype=np.uint8)
 
+# Correctness gate — the SIMD kernel (AVX2 on x86, NEON on ARM) must be
+# byte-exact vs NumPy before any speed number is meaningful. Verify on a small
+# slice across a few code lengths, then assert before benchmarking.
+print('\nVerifying SIMD output vs NumPy...')
+for nb in (64, 32, 40, 17):
+    sdb = rng.integers(0, 256, (1000, nb), dtype=np.uint8)
+    sq = rng.integers(0, 256, nb, dtype=np.uint8)
+    gt = np.unpackbits(np.bitwise_xor(sdb, sq.reshape(1, -1)), axis=1).sum(axis=1)
+    got = np.asarray(core.hamming_distances(sq, sdb))
+    assert np.array_equal(gt.astype(np.uint32), got), f'SIMD MISMATCH at nbytes={nb}!'
+    print(f'  nbytes={nb:3d}: exact match ✓')
+print('  ✓ SIMD kernel is byte-exact vs NumPy\n')
+
 # Warmup
 for _ in range(10):
     core.hamming_topk(query, db, 100)
