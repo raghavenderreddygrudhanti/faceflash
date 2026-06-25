@@ -102,7 +102,7 @@ class FaceFlash:
         return {"registered": registered, "errors": errors, "total": self.index.count}
 
     def search(self, image_path: str, k: int = 1, threshold: float = 0.4,
-               n_candidates: Optional[int] = None) -> List[dict]:
+               n_candidates: Optional[int] = None) -> dict:
         """
         Search for a face in the index.
 

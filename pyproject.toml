@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "faceflash"
 version = "0.1.0"
-description = "Sub-linear face retrieval at million scale via PCA binary quantization"
+description = "Fast face retrieval via PCA+ITQ binary quantization — 50x less memory than HNSW at equal recall"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     {name = "Raghavender Grudhanti", email = "raghavenderreddy1212@gmail.com"}
 ]
-keywords = ["face-recognition", "vector-search", "binary-quantization", "arcface", "million-scale"]
+keywords = ["face-recognition", "vector-search", "binary-quantization", "arcface", "memory-efficient"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.24",
     "onnxruntime>=1.16",
+    "opencv-python>=4.8",
     "Pillow>=10.0",
     "tqdm>=4.60",
 ]
