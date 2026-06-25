@@ -1,0 +1,22 @@
+{
+  "benchmark": "alignment (LFW verification)",
+  "n_pairs": 6000,
+  "results": [
+    {
+      "method": "haar",
+      "accuracy": 0.9855,
+      "accuracy_std": 0.0049,
+      "tar_at_far_1e-3": 0.9693,
+      "mean_genuine_cos": 0.5795,
+      "mean_impostor_cos": 0.0098
+    },
+    {
+      "method": "retinaface",
+      "accuracy": 0.9985,
+      "accuracy_std": 0.0017,
+      "tar_at_far_1e-3": 0.9973,
+      "mean_genuine_cos": 0.67,
+      "mean_impostor_cos": 0.0039
+    }
+  ]
+}
