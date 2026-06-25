@@ -29,6 +29,8 @@ pip install git+https://github.com/***REMOVED***rudhanti/faceflash.git
 Tested on MS1MV2 (13,724 distinct identities) and VGGFace2 (500K images).
 All methods single-threaded, same hardware, same data.
 
+> **Memory = binary index only.** Float vectors for reranking are mmap'd from disk after `save()`/`load()` — only ~100 candidate rows are paged per query. See [Limitations](#limitations) for details.
+
 ![Memory to index 100K faces — FaceFlash 3 MB vs HNSW 293 MB](docs/figures/chart_memory_bar.png)
 
 ## Quick Start
