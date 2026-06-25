@@ -11,8 +11,8 @@ pip install faceflash
 
 ## At a Glance
 
-|  | FaceFlash | Best competitor (HNSW) |
-|--|-----------|----------------------|
+|  | FaceFlash | Best alternative |
+|--|-----------|------------------|
 | Find the right person (rank-1) | **95.8%** | 95.7% (exact ceiling) |
 | Memory for 13,724 people | **0.84 MB** | 293 MB |
 | Memory for 500K faces | **30 MB** | 1,465 MB |
@@ -21,6 +21,8 @@ pip install faceflash
 
 Tested on MS1MV2 (13,724 distinct identities) and VGGFace2 (500K images).
 All methods single-threaded, same hardware, same data.
+
+![Memory to index 100K faces — FaceFlash 3 MB vs HNSW 293 MB](docs/figures/chart_memory_bar.png)
 
 ## Quick Start
 
@@ -67,15 +69,19 @@ All benchmarks: single-threaded, `time.perf_counter()` per query, ground truth =
 
 The hardest test: one photo per person in the gallery, find them using a *different* photo.
 
+![Rank-1 identification ties exact search on 13,724 distinct people](docs/figures/chart_rank1_tie.png)
+
 | Method | Rank-1 Accuracy | Memory |
 |--------|----------------|--------|
-| FAISS-Flat (exact ceiling) | 95.7% | 6.7 MB |
+| FAISS-Flat (exact ceiling) | 95.7% | 26.8 MB |
 | **FaceFlash (512b/100c)** | **95.8%** | **0.84 MB** |
 | FaceFlash (256b/100c) | 95.6% | 0.42 MB |
 
-FaceFlash ties exact search. The binary compression is free — no accuracy loss.
+FaceFlash ties exact search using **32× less memory** — the binary compression is free, no accuracy loss.
 
 ### vs All ANN Methods — 100K Faces (MS1MV2, 13,724 identities)
+
+![Recall vs memory — FaceFlash sits alone in the high-recall, low-memory corner](docs/figures/chart_recall_memory_pareto.png)
 
 | Method | Recall@1 | Latency | Memory | Type |
 |--------|----------|---------|--------|------|
@@ -114,6 +120,10 @@ At 500K: **48x less memory** than HNSW. HNSW is 6.7x faster. FaceFlash wins on m
 | Offline / no-server deployment | Batch search (FAISS batch is faster) |
 
 ## Tuning
+
+More bits or more candidates both buy recall — they substitute for each other. This curve (1M faces, 95% CI bands) shows the trade:
+
+![Recall vs candidates per code length, with 95% confidence bands](docs/figures/chart_recall_vs_candidates.png)
 
 Two knobs, and they substitute for each other:
 
