@@ -13,7 +13,7 @@ Search 13,000 distinct people in 0.84 MB. Search 500,000 faces in 30 MB.
 Same accuracy as exact brute-force search, 48-96x less memory. Runs on CPU.
 
 ```
-pip install git+https://github.com/raghavenderreddygrudhanti/faceflash.git
+pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"
 ```
 
 ## At a Glance
@@ -205,10 +205,11 @@ Result: fewer candidates needed for the same recall vs random projection.
 # Installing from source builds the Rust POPCNT backend into the package
 # automatically (no manual step) — requires a Rust toolchain on your machine:
 #   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-pip install git+https://github.com/raghavenderreddygrudhanti/faceflash.git
+pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"   # CPU inference
+# or [gpu] for CUDA. onnxruntime is an extra so it won't clobber an existing GPU install.
 
 # With benchmark dependencies
-pip install "faceflash[benchmark] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"
+pip install "faceflash[cpu,benchmark] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"
 ```
 
 > Prebuilt wheels (no Rust toolchain needed) ship via PyPI on each release — see `.github/workflows/release.yml`. Once published: `pip install faceflash`.

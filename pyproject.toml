@@ -23,14 +23,20 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.24",
-    "onnxruntime>=1.16",
     "opencv-python-headless>=4.8",
     "Pillow>=10.0",
     "tqdm>=4.60",
 ]
 
+# onnxruntime is an EXTRA, not a hard dep, to avoid clobbering an existing
+# onnxruntime-gpu install (they share the `onnxruntime` import but are
+# different PyPI packages). Install one explicitly:
+#   pip install faceflash[cpu]   # CPU inference
+#   pip install faceflash[gpu]   # CUDA inference
 [project.optional-dependencies]
-dev = ["pytest", "matplotlib", "pandas"]
+cpu = ["onnxruntime>=1.16"]
+gpu = ["onnxruntime-gpu>=1.16"]
+dev = ["pytest", "matplotlib", "pandas", "onnxruntime>=1.16"]
 benchmark = ["faiss-cpu>=1.7", "usearch>=2.0", "hnswlib>=0.7"]
 
 [project.urls]

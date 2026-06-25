@@ -28,7 +28,14 @@ class FaceEmbedder:
     """ArcFace embedding model (ONNX). Uses GPU if available, else CPU."""
 
     def __init__(self):
-        import onnxruntime as ort
+        try:
+            import onnxruntime as ort
+        except ImportError as e:
+            raise ImportError(
+                "onnxruntime is required for embeddings. Install one of:\n"
+                "  pip install faceflash[cpu]   # CPU\n"
+                "  pip install faceflash[gpu]   # CUDA"
+            ) from e
         model_path = ensure_model()
         # Prefer GPU → CPU fallback
         available = ort.get_available_providers()
