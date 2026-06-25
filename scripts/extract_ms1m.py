@@ -23,16 +23,23 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
-def extract_from_folders(ms1m_dir, target_n, embedder):
+def extract_from_folders(ms1m_dir, target_n, embedder, max_per_identity=None):
     """
     Extract embeddings from folder-of-JPEGs format:
       ms1m_dir/<identity_id>/<image>.jpg
+    
+    If max_per_identity is set, extracts at most N images per identity
+    but covers ALL identities (for maximum identity diversity).
     """
     ms1m_path = Path(ms1m_dir)
     
     # Find all identity folders
     identity_dirs = sorted([d for d in ms1m_path.iterdir() if d.is_dir()])
     print(f"  Found {len(identity_dirs):,} identity folders")
+    if max_per_identity:
+        print(f"  Mode: ALL identities, max {max_per_identity} images each")
+    else:
+        print(f"  Mode: sequential until {target_n:,} embeddings")
 
     embeddings = []
     labels = []
@@ -41,13 +48,17 @@ def extract_from_folders(ms1m_dir, target_n, embedder):
 
     # Label = folder position (works for ANY folder naming: m.0abc, 00001, etc.)
     for label_idx, identity_dir in enumerate(tqdm(identity_dirs, desc="  Identities")):
-        if len(embeddings) >= target_n:
+        if not max_per_identity and len(embeddings) >= target_n:
             break
 
         image_files = sorted(identity_dir.glob("*.jpg")) + sorted(identity_dir.glob("*.png"))
+        
+        # Limit images per identity if specified
+        if max_per_identity:
+            image_files = image_files[:max_per_identity]
 
         for img_path in image_files:
-            if len(embeddings) >= target_n:
+            if not max_per_identity and len(embeddings) >= target_n:
                 break
             try:
                 img = Image.open(img_path).convert('RGB')
@@ -62,9 +73,11 @@ def extract_from_folders(ms1m_dir, target_n, embedder):
         if len(embeddings) % 50000 < len(image_files) and len(embeddings) > 0:
             elapsed = time.perf_counter() - t_start
             rate = len(embeddings) / elapsed
-            remaining = (target_n - len(embeddings)) / max(rate, 1) / 60
-            print(f"\n  Progress: {len(embeddings):,} done | "
-                  f"{rate:.0f} img/s | ETA {remaining:.0f} min | Failed: {failed}")
+            remaining_ids = len(identity_dirs) - label_idx
+            est_remaining = remaining_ids * (elapsed / max(label_idx, 1)) / 60
+            print(f"\n  Progress: {len(embeddings):,} embeddings, "
+                  f"{label_idx+1:,}/{len(identity_dirs):,} identities | "
+                  f"{rate:.0f} img/s | ETA {est_remaining:.0f} min | Failed: {failed}")
     
     return np.array(embeddings, dtype=np.float32), np.array(labels)
 
@@ -116,6 +129,9 @@ def extract_from_rec(rec_path, idx_path, target_n, embedder):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--target', type=int, default=1000000)
+    parser.add_argument('--max-per-identity', type=int, default=None,
+                        help='Max images per identity. If set, processes ALL identities '
+                             '(ignores --target). Use 10-20 for full 85K identity coverage.')
     parser.add_argument('--data-dir', default='data')
     parser.add_argument('--ms1m-dir', default='data/ms1m')
     args = parser.parse_args()
@@ -162,7 +178,8 @@ def main():
     
     if jpeg_dir:
         print(f"  MS1MV2 format: folder-of-JPEGs ({jpeg_dir})")
-        embeddings, labels = extract_from_folders(jpeg_dir, args.target, embedder)
+        embeddings, labels = extract_from_folders(jpeg_dir, args.target, embedder,
+                                                   max_per_identity=args.max_per_identity)
     else:
         print(f"  MS1MV2 format: MXNet RecordIO ({rec_path})")
         idx_path = MS1M_DIR / 'train.idx'
