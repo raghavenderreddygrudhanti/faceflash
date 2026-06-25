@@ -56,7 +56,11 @@ def load_lfw(max_pairs=None):
     else:
         print("  LFW source: scikit-learn fetch_lfw_pairs (download + cache)")
         from sklearn.datasets import fetch_lfw_pairs
-        d = fetch_lfw_pairs(subset="10_folds", funneled=True, color=True, resize=1.0)
+        # slice_=None → full funneled image (250x250). The default tight crop
+        # (~125x94) leaves no context for the face detector, so both methods
+        # would fall back to center-crop and the comparison would be meaningless.
+        d = fetch_lfw_pairs(subset="10_folds", funneled=True, color=True,
+                            resize=1.0, slice_=None)
         arr = d.pairs
         if arr.max() <= 1.0:
             arr = arr * 255.0
