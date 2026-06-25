@@ -1,0 +1,91 @@
+{
+  "benchmark": "coarse clustering (IVF) \u2014 real embeddings",
+  "rust_backend": true,
+  "n_bits": 512,
+  "n_candidates": 100,
+  "note": "full scan vs clustered; n_probe sweeps the recall/speed tradeoff",
+  "scales": {
+    "100K": {
+      "n_database": 100000,
+      "n_queries": 1000,
+      "n_clusters": 316,
+      "full_scan": {
+        "recall_at_1": 1.0,
+        "latency_mean_ms": 0.9628
+      },
+      "clustered": [
+        {
+          "n_probe": 4,
+          "recall_at_1": 0.835,
+          "latency_mean_ms": 0.1616,
+          "speedup_vs_full": 5.96
+        },
+        {
+          "n_probe": 8,
+          "recall_at_1": 0.908,
+          "latency_mean_ms": 0.1043,
+          "speedup_vs_full": 9.23
+        },
+        {
+          "n_probe": 16,
+          "recall_at_1": 0.952,
+          "latency_mean_ms": 0.148,
+          "speedup_vs_full": 6.51
+        },
+        {
+          "n_probe": 32,
+          "recall_at_1": 0.974,
+          "latency_mean_ms": 0.238,
+          "speedup_vs_full": 4.05
+        },
+        {
+          "n_probe": 64,
+          "recall_at_1": 0.99,
+          "latency_mean_ms": 0.4506,
+          "speedup_vs_full": 2.14
+        }
+      ]
+    },
+    "500K": {
+      "n_database": 500000,
+      "n_queries": 1000,
+      "n_clusters": 707,
+      "full_scan": {
+        "recall_at_1": 1.0,
+        "latency_mean_ms": 4.5849
+      },
+      "clustered": [
+        {
+          "n_probe": 4,
+          "recall_at_1": 0.666,
+          "latency_mean_ms": 0.1425,
+          "speedup_vs_full": 32.16
+        },
+        {
+          "n_probe": 8,
+          "recall_at_1": 0.759,
+          "latency_mean_ms": 0.2168,
+          "speedup_vs_full": 21.15
+        },
+        {
+          "n_probe": 16,
+          "recall_at_1": 0.842,
+          "latency_mean_ms": 0.4145,
+          "speedup_vs_full": 11.06
+        },
+        {
+          "n_probe": 32,
+          "recall_at_1": 0.916,
+          "latency_mean_ms": 0.7075,
+          "speedup_vs_full": 6.48
+        },
+        {
+          "n_probe": 64,
+          "recall_at_1": 0.955,
+          "latency_mean_ms": 1.4396,
+          "speedup_vs_full": 3.18
+        }
+      ]
+    }
+  }
+}
