@@ -6,7 +6,7 @@ description = "Ultra-fast binary vector search for face retrieval"
 license = "MIT"
 
 [lib]
-name = "faceflash_core"
+name = "_core"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -14,8 +14,9 @@ pyo3 = { version = "0.22", features = ["extension-module"] }
 numpy = "0.22"
 rayon = "1.10"
 
+# Portable release build for distributable wheels (no target-cpu=native).
+# POPCNT (count_ones) is available on all x86-64-v1 and aarch64 CPUs.
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
-target-cpu = "native"

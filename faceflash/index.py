@@ -12,12 +12,17 @@ import json
 
 from faceflash.pca_quantize import PCABinaryQuantizer, _POPCOUNT_TABLE
 
-# Try Rust backend
+# Try Rust backend — packaged as faceflash._core, with a fallback to a
+# top-level faceflash_core build (legacy / `maturin develop` dev workflow).
 try:
-    import faceflash_core as _rust
+    from faceflash import _core as _rust
     _HAS_RUST = True
 except ImportError:
-    _HAS_RUST = False
+    try:
+        import faceflash_core as _rust
+        _HAS_RUST = True
+    except ImportError:
+        _HAS_RUST = False
 
 
 class FaceIndex:

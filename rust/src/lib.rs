@@ -110,7 +110,7 @@ fn hamming_topk_parallel<'py>(
 }
 
 #[pymodule]
-fn faceflash_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hamming_distances, m)?)?;
     m.add_function(wrap_pyfunction!(hamming_distances_parallel, m)?)?;
     m.add_function(wrap_pyfunction!(hamming_topk, m)?)?;

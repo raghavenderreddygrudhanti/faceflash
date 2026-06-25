@@ -60,7 +60,7 @@ ff.register_folder("employees/")  # folder/person_name/photo.jpg
 ff.save("my_index/")
 ```
 
-> **Note:** The Rust backend (50× faster search) requires manual build — see [Installation](#installation). Without it, search uses NumPy fallback which is functional but slower at scale. For best accuracy, use pre-aligned 112×112 face images. See [Limitations](#limitations).
+> **Note:** Installing from source builds the Rust POPCNT backend (50× faster search) into the package automatically — it just needs a Rust toolchain present (prebuilt PyPI wheels need nothing). If the backend is unavailable, search transparently falls back to NumPy. For best accuracy, use pre-aligned 112×112 face images. See [Limitations](#limitations).
 
 ## How It Works
 
@@ -202,16 +202,16 @@ Result: fewer candidates needed for the same recall vs random projection.
 ## Installation
 
 ```bash
-# Python package (from GitHub)
+# Installing from source builds the Rust POPCNT backend into the package
+# automatically (no manual step) — requires a Rust toolchain on your machine:
+#   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 pip install git+https://github.com/raghavenderreddygrudhanti/faceflash.git
 
-# With Rust backend (recommended — 50x faster search)
-git clone https://github.com/raghavenderreddygrudhanti/faceflash.git
-cd faceflash/rust && maturin develop --release
-
-# With all benchmark dependencies
-pip install git+https://github.com/raghavenderreddygrudhanti/faceflash.git#egg=faceflash[benchmark]
+# With benchmark dependencies
+pip install "faceflash[benchmark] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"
 ```
+
+> Prebuilt wheels (no Rust toolchain needed) ship via PyPI on each release — see `.github/workflows/release.yml`. Once published: `pip install faceflash`.
 
 ## Reproduce the Benchmarks
 
