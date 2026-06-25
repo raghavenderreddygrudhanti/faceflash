@@ -15,6 +15,12 @@
 #   export KAGGLE_USERNAME=<your-kaggle-username>   # only if embeddings NOT on HF
 #   export KAGGLE_KEY=<your-kaggle-key>             # (HF pull skips Kaggle + extraction)
 #
+# FULL 85K RUN (GPU pod): force a fresh extraction of ALL ~85K identities,
+# replacing the 13.7K HF subset. Needs a GPU + Kaggle keys + HF write token:
+#   export FORCE_EXTRACT=1
+#   export KAGGLE_USERNAME=... KAGGLE_KEY=... HF_TOKEN=hf_xxx(write)
+#   (run takes ~60-90 min; uploads new 85K embeddings to HF for future runs)
+#
 # ONE command on a fresh RunPod terminal (HF public → no HF_TOKEN needed):
 #   export GITHUB_TOKEN=ghp_xxx
 #   export HF_TOKEN=hf_xxx HF_EMB_REPO=raghavenderreddy1212/faceflash-embeddings   # if private
@@ -110,12 +116,20 @@ MS1M_DIR="data/ms1m"
 MS1M_OUT="data/ms1m_embeddings.npy"
 EXTRACTED_FRESH=0
 
-if [ -f "$MS1M_OUT" ]; then
+# FORCE_EXTRACT=1 → ignore any local/HF embeddings and re-extract ALL ~85K
+# identities from MS1MV2 (needs a GPU pod + Kaggle keys). The freshly extracted
+# 85K embeddings are uploaded back to HF, replacing the old 13.7K subset.
+if [ "${FORCE_EXTRACT:-0}" = "1" ]; then
+    log "  FORCE_EXTRACT=1 → re-extracting full 85K (skipping local + HF embeddings)"
+    rm -f "$MS1M_OUT" 2>/dev/null
+fi
+
+if [ "${FORCE_EXTRACT:-0}" != "1" ] && [ -f "$MS1M_OUT" ]; then
     log "  ✓ MS1MV2 embeddings already present locally"
-elif { python scripts/hf_sync.py download 2>&1 | tee -a "$LOG_FILE"; [ -f "$MS1M_OUT" ]; }; then
+elif [ "${FORCE_EXTRACT:-0}" != "1" ] && { python scripts/hf_sync.py download 2>&1 | tee -a "$LOG_FILE"; [ -f "$MS1M_OUT" ]; }; then
     log "  ✓ Pulled embeddings from HuggingFace — skipped Kaggle download + GPU extraction"
 else
-    log "  Embeddings not on HF — extracting from MS1MV2 (Kaggle)..."
+    log "  Extracting embeddings from MS1MV2 (Kaggle, full 85K)..."
     if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
         log "  ✗ KAGGLE_USERNAME and KAGGLE_KEY must be set!"
         log "    export KAGGLE_USERNAME=<your-kaggle-username>"
