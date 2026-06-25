@@ -33,9 +33,7 @@ All methods single-threaded, same hardware, same data.
 
 ![Memory to index 100K faces — FaceFlash 3 MB vs HNSW 293 MB](docs/figures/chart_memory_bar.png)
 
-<!-- TODO: Add demo GIF here showing register → search → result in terminal
-![FaceFlash demo](docs/figures/demo.gif)
--->
+![FaceFlash demo — search 100,000 faces from a 3 MB index in ~0.5 ms on CPU](docs/figures/demo.gif)
 
 ## Quick Start
 
