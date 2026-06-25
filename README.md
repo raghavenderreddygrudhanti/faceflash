@@ -165,9 +165,7 @@ rust/
 PCA aligns quantization with those axes. ITQ rotates bits for balanced marginals.
 Result: fewer candidates needed for the same recall vs random projection.
 
-**Why not HNSW?** HNSW stores a graph on top of the full float vectors — 1.5x raw memory.
-FaceFlash stores 64 bytes per face. Float vectors are mmap'd from disk and only paged
-for the ~100 candidates that pass the binary filter.
+**Why not use HNSW internally?** HNSW-based libraries (HNSWLIB, USearch) are faster per-query, but they store a graph on top of the full float vectors — 1.5x raw memory. FaceFlash stores just 64 bytes per face. Float vectors are mmap'd from disk and only paged for the ~100 candidates that pass the binary filter. The tradeoff: slightly higher latency, but 48-96x less memory.
 
 **Why Rust?** Hamming distance uses hardware POPCNT. Rust compiles to tight loops — 50x faster than NumPy.
 
