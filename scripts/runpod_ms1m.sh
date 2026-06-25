@@ -110,7 +110,7 @@ else
     # Download zip if not present
     if [ ! -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
         FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
-        if [ "$FOLDER_COUNT" -ge 80000 ]; then
+        if [ "$FOLDER_COUNT" -ge 70000 ]; then
             log "  ✓ MS1MV2 already fully extracted ($FOLDER_COUNT folders)"
         else
             log "  Downloading MS1MV2 from Kaggle (~16GB, takes 5-10 min)..."
@@ -128,7 +128,7 @@ else
 
     # Extract zip if needed (check folder count)
     FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
-    if [ "$FOLDER_COUNT" -lt 80000 ] && [ -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
+    if [ "$FOLDER_COUNT" -lt 70000 ] && [ -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
         log "  Extracting MS1MV2 zip (~85K folders, progress every 30s)..."
         log "  Currently: $FOLDER_COUNT folders"
         unzip -o "$MS1M_DIR/ms1m-arcface-dataset.zip" -d "$MS1M_DIR/" > /tmp/unzip_ms1m.log 2>&1 &
