@@ -250,6 +250,8 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (13,724 identities, 1:N identification
 - [x] **5-point alignment** (SCRFD/RetinaFace) — raw photos hit 99.85% LFW (+1.30 pts)
 
 **v0.2.0** — production quality
+- [x] **RetinaFace alignment** — 5-point face alignment so raw photos match benchmark accuracy
+- [x] **Prebuilt wheels** — `pip install faceflash` ships the Rust backend (no toolchain needed)
 - [ ] **Full 85K-identity benchmark** — extract all identities from MS1MV2, not just 13.7K
 - [ ] **On-device memory measurement** — measured RSS on Raspberry Pi / ARM, not just modeled
 
