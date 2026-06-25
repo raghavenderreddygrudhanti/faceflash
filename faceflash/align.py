@@ -188,7 +188,12 @@ def detect_and_align(img_rgb: np.ndarray):
     boxes, kps = det.detect(img_rgb)
     if len(boxes) == 0:
         return None
-    # largest face by area
+    # Pick the most prominent face: large AND central (insightface heuristic).
+    # Pure "largest area" can lose to a spurious off-center detection.
+    h, w = img_rgb.shape[:2]
+    cx = (boxes[:, 0] + boxes[:, 2]) / 2.0
+    cy = (boxes[:, 1] + boxes[:, 3]) / 2.0
     areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
-    best = int(areas.argmax())
+    dist2 = (cx - w / 2.0) ** 2 + (cy - h / 2.0) ** 2
+    best = int((areas - 2.0 * dist2).argmax())
     return align_face(img_rgb, kps[best])
