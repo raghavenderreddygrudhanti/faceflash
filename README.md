@@ -191,7 +191,7 @@ Result: fewer candidates needed for the same recall vs random projection.
 
 - **Linear scan** — search time scales linearly with database size (not sub-linear like HNSW)
 - **Memory during build** — constructing the index holds all float vectors in RAM. The mmap benefit applies after `save()`/`load()`
-- **Face detection** — the built-in detector (Haar cascade) is basic. For best accuracy, pass pre-aligned 112x112 face crops
+- **Face detection** — the built-in detector (Haar cascade) is basic. **For best accuracy, pass pre-aligned 112×112 face crops.** Our benchmarks (99.9% recall, 95.8% rank-1) used pre-aligned data. On raw photos with the built-in Haar detector, expect lower accuracy. RetinaFace alignment is on the roadmap.
 - **Rust backend** — must be built manually (`cd rust && maturin develop --release`). Not yet shipped in pip wheels
 - **Rerank latency is cache-dependent** — the quoted times assume float vectors are OS-cached. On truly memory-constrained devices, rerank becomes I/O-bound
 
