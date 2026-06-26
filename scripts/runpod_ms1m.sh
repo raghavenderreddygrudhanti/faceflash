@@ -246,6 +246,16 @@ DATA_TAG=ms1m python benchmarks/bench_clustering.py --scales 100K,500K \
     --queries 1000 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
+
+# ─────────────────────────────────────────────────────────────────────────
+# Step 4d: SIMD Hamming kernel — raw scan speed (AVX2 on x86, NEON on ARM).
+# Self-validates correctness vs NumPy, then times single + parallel scans.
+# Synthetic codes (no embeddings needed) → writes results/bench_simd.json.
+# ─────────────────────────────────────────────────────────────────────────
+log "  Running SIMD Hamming benchmark (AVX2/NEON raw scan speed)..."
+python benchmarks/bench_simd.py --scales 100K,500K 2>&1 | tee -a "$LOG_FILE" || true
+
+log ""
 log "  ✓ MS1MV2 benchmarks complete"
 log ""
 
@@ -278,5 +288,6 @@ echo "       results/bench_ann_comparison_ms1m.json   (ANN, full 85K identities)
 echo "       results/bench_identification_ms1m.json   (1:N rank-1, 85K gallery)"
 echo "       results/bench_alignment.json             (Haar vs RetinaFace, LFW)"
 echo "       results/bench_clustering.json            (full scan vs IVF clustering)"
+echo "       results/bench_simd.json                  (AVX2/NEON raw scan speed)"
 echo "   ➜ BUNDLE (download this): ${BUNDLE}"
 echo "═══════════════════════════════════════════════════════════════"
