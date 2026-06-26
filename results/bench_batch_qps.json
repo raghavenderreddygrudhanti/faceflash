@@ -1,0 +1,33 @@
+{
+  "benchmark": "Batch QPS (per-query vs cache-blocked batched scan) \u2014 REAL data",
+  "backend": "faceflash_core (Rust, POPCNT-accelerated)",
+  "cpu": {
+    "arch": "x86_64",
+    "cpu_count": 128,
+    "avx512_vpopcntdq": true,
+    "model": "AMD EPYC 9355 32-Core Processor"
+  },
+  "data_tag": "ms1m",
+  "data_identities_total": 30005,
+  "n_bits": 512,
+  "queries": 1000,
+  "n_candidates": 100,
+  "batched_correct_vs_truth": true,
+  "note": "real MS1MV2 codes; scan-only throughput (rerank excluded, identical on all paths); bandwidth win appears once DB > LLC",
+  "scales": {
+    "100K": {
+      "n_database": 100000,
+      "n_identities": 8495,
+      "n_bits": 512,
+      "db_mb": 6.1,
+      "queries": 1000,
+      "n_candidates": 100,
+      "reps": 5,
+      "per_query_qps": 1065.2,
+      "batched_serial_qps": 1132.0,
+      "batched_parallel_qps": 14526.2,
+      "speedup_serial": 1.06,
+      "speedup_parallel": 13.64
+    }
+  }
+}

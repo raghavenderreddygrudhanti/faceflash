@@ -10,34 +10,51 @@
       "n_database": 100000,
       "n_bits": 512,
       "single_threaded": {
-        "mean_ms": 0.8915,
-        "p50_ms": 0.8913,
-        "p95_ms": 0.8946,
-        "qps": 1121.7
+        "mean_ms": 0.9371,
+        "p50_ms": 0.9371,
+        "p95_ms": 0.9388,
+        "qps": 1067.2
       },
       "parallel": {
-        "mean_ms": 0.6009,
-        "p50_ms": 0.6001,
-        "p95_ms": 0.6329,
-        "qps": 1664.1,
-        "speedup_vs_single": 1.48
+        "mean_ms": 0.3236,
+        "p50_ms": 0.3223,
+        "p95_ms": 0.3474,
+        "qps": 3089.9,
+        "speedup_vs_single": 2.9
       }
     },
     "500K": {
       "n_database": 500000,
       "n_bits": 512,
       "single_threaded": {
-        "mean_ms": 4.4622,
-        "p50_ms": 4.4523,
-        "p95_ms": 4.5102,
-        "qps": 224.1
+        "mean_ms": 4.6974,
+        "p50_ms": 4.6959,
+        "p95_ms": 4.7091,
+        "qps": 212.9
       },
       "parallel": {
-        "mean_ms": 3.5188,
-        "p50_ms": 3.4885,
-        "p95_ms": 3.8687,
-        "qps": 284.2,
-        "speedup_vs_single": 1.27
+        "mean_ms": 0.6287,
+        "p50_ms": 0.6258,
+        "p95_ms": 0.6636,
+        "qps": 1590.7,
+        "speedup_vs_single": 7.47
+      }
+    },
+    "1M": {
+      "n_database": 1000000,
+      "n_bits": 512,
+      "single_threaded": {
+        "mean_ms": 9.5059,
+        "p50_ms": 9.4382,
+        "p95_ms": 9.5018,
+        "qps": 105.2
+      },
+      "parallel": {
+        "mean_ms": 1.3811,
+        "p50_ms": 1.3734,
+        "p95_ms": 1.4031,
+        "qps": 724.1,
+        "speedup_vs_single": 6.88
       }
     }
   }

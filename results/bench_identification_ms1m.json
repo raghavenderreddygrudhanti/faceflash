@@ -1,27 +1,27 @@
 {
   "dataset": "ms1m_embeddings.npy",
-  "n_gallery_identities": 45832,
+  "n_gallery_identities": 30004,
   "n_probes": 5000,
   "note": "rank-1 identification: 1 image/identity gallery, different probe",
   "results": [
     {
       "method": "FAISS-Flat (exact)",
-      "rank1": 0.958
+      "rank1": 0.9542
     },
     {
       "method": "FaceFlash(256/100)",
-      "rank1": 0.9566,
-      "memory_mb": 1.399
+      "rank1": 0.9532,
+      "memory_mb": 0.916
     },
     {
       "method": "FaceFlash(512/100)",
-      "rank1": 0.958,
-      "memory_mb": 2.797
+      "rank1": 0.9542,
+      "memory_mb": 1.831
     },
     {
       "method": "FaceFlash(512/300)",
-      "rank1": 0.9582,
-      "memory_mb": 2.797
+      "rank1": 0.9544,
+      "memory_mb": 1.831
     }
   ]
 }
