@@ -223,45 +223,18 @@ fn hamming_topk_parallel<'py>(
     let db = database.as_array();
     let n = db.shape()[0];
     let k = k.min(n);
-    if k == 0 {
-        return PyArray1::from_vec_bound(py, Vec::<u64>::new());
-    }
 
-    // Coarse-grained parallelism: split the database into a few contiguous
-    // blocks per worker (not one task per row). Each block is scanned
-    // sequentially — good cache/prefetch behaviour — and reduced to its own
-    // local top-k. We then merge the (few) per-block top-k lists serially.
-    // This keeps the parallel portion ~100% of the work; the old version did
-    // an O(N) serial select over all N afterwards, which capped speedup.
-    let n_threads = rayon::current_num_threads().max(1);
-    // ~4 blocks per thread → good load balance without excess overhead.
-    let n_blocks = (n_threads * 4).max(1);
-    let block = n.div_ceil(n_blocks).max(1);
-
-    let mut merged: Vec<(u32, u64)> = (0..n)
-        .step_by(block)
-        .collect::<Vec<_>>()
+    let rows: Vec<&[u8]> = (0..n).map(|i| db.row(i).to_slice().unwrap()).collect();
+    let mut dist_idx: Vec<(u32, usize)> = rows
         .par_iter()
-        .flat_map(|&start| {
-            let end = (start + block).min(n);
-            let mut local: Vec<(u32, u64)> = (start..end)
-                .map(|i| (hamming(db.row(i).to_slice().unwrap(), q), i as u64))
-                .collect();
-            let kk = k.min(local.len());
-            if kk > 0 {
-                local.select_nth_unstable_by_key(kk - 1, |&(d, _)| d);
-                local.truncate(kk);
-            }
-            local
-        })
+        .enumerate()
+        .map(|(i, row)| (hamming(row, q), i))
         .collect();
 
-    // Final merge over the small set of per-block candidates (≈ n_blocks * k).
-    let kk = k.min(merged.len());
-    merged.select_nth_unstable_by_key(kk - 1, |&(d, _)| d);
-    merged[..kk].sort_unstable_by_key(|&(d, _)| d);
+    dist_idx.select_nth_unstable_by_key(k - 1, |&(d, _)| d);
+    dist_idx[..k].sort_unstable_by_key(|&(d, _)| d);
 
-    let indices: Vec<u64> = merged[..kk].iter().map(|&(_, i)| i).collect();
+    let indices: Vec<u64> = dist_idx[..k].iter().map(|&(_, i)| i as u64).collect();
     PyArray1::from_vec_bound(py, indices)
 }
 

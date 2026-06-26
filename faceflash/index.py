@@ -162,8 +162,7 @@ class FaceIndex:
 
     def search(self, query_embedding: np.ndarray, k: int = 1,
                n_candidates: Optional[int] = None,
-               n_probe: Optional[int] = None,
-               parallel: bool = False) -> List[Tuple[str, float, int]]:
+               n_probe: Optional[int] = None) -> List[Tuple[str, float, int]]:
         """
         Two-phase search: Hamming filter → cosine rerank.
         Uses Rust backend when available (50x faster).
@@ -171,10 +170,6 @@ class FaceIndex:
         n_candidates is the search-effort knob, independent of k (the result
         count). More candidates → higher recall + more float reranks. Defaults
         to max(100, k*10), which reaches ≥99% recall in benchmarks.
-
-        parallel=True scans the binary index across CPU cores (multi-threaded
-        Hamming). Off by default so single-core/edge devices are unaffected;
-        worth enabling for large databases on multi-core machines (~4× at 500K).
         """
         # Flush any buffered add() calls before searching
         self._flush_pending()
@@ -206,8 +201,7 @@ class FaceIndex:
             n_cand = n_candidates
 
         if _HAS_RUST:
-            kernel = _rust.hamming_topk_parallel if parallel else _rust.hamming_topk
-            topk = kernel(query_packed, scan_vectors, n_cand)
+            topk = _rust.hamming_topk(query_packed, scan_vectors, n_cand)
             local_indices = np.asarray(topk).astype(np.intp)
         else:
             xor = np.bitwise_xor(scan_vectors, query_packed.reshape(1, -1))
