@@ -1,0 +1,44 @@
+{
+  "benchmark": "SIMD Hamming kernel (raw binary scan)",
+  "backend": "faceflash_core (Rust, POPCNT-accelerated)",
+  "arch": "x86_64",
+  "n_bits": 512,
+  "simd_correct_vs_numpy": true,
+  "note": "AVX2 on x86_64, NEON on aarch64, scalar fallback otherwise",
+  "scales": {
+    "100K": {
+      "n_database": 100000,
+      "n_bits": 512,
+      "single_threaded": {
+        "mean_ms": 0.8898,
+        "p50_ms": 0.8889,
+        "p95_ms": 0.8974,
+        "qps": 1123.8
+      },
+      "parallel": {
+        "mean_ms": 0.5545,
+        "p50_ms": 0.5538,
+        "p95_ms": 0.6022,
+        "qps": 1803.3,
+        "speedup_vs_single": 1.6
+      }
+    },
+    "500K": {
+      "n_database": 500000,
+      "n_bits": 512,
+      "single_threaded": {
+        "mean_ms": 4.4776,
+        "p50_ms": 4.4813,
+        "p95_ms": 4.4983,
+        "qps": 223.3
+      },
+      "parallel": {
+        "mean_ms": 3.7085,
+        "p50_ms": 3.7206,
+        "p95_ms": 3.9155,
+        "qps": 269.7,
+        "speedup_vs_single": 1.21
+      }
+    }
+  }
+}
