@@ -185,3 +185,22 @@ def test_full_probe_matches_full_scan():
     idx.build_clusters(n_clusters=16)
     clustered = idx.search(embs[55], k=1, n_probe=16)
     assert plain[0][2] == clustered[0][2]
+
+
+# ── parallel search ──────────────────────────────────────────────────────────
+def test_parallel_search_matches_single():
+    """search(parallel=True) must return the same match as the single-threaded path."""
+    idx, embs = _build(n=2000)
+    for i in (3, 77, 1500):
+        single = idx.search(embs[i], k=1, parallel=False)
+        par = idx.search(embs[i], k=1, parallel=True)
+        assert single[0][0] == par[0][0] == f"p{i}"
+        assert abs(single[0][1] - par[0][1]) < 1e-5
+
+
+def test_parallel_search_with_clusters():
+    """Parallel flag works alongside the clustering path."""
+    idx, embs = _build(n=1500)
+    idx.build_clusters(n_clusters=16)
+    res = idx.search(embs[9], k=1, n_probe=16, parallel=True)
+    assert res[0][0] == "p9"
