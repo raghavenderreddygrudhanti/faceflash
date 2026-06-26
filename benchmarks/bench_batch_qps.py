@@ -1,41 +1,47 @@
 """
-Batch-QPS benchmark — single-query throughput vs cache-blocked batched search.
+Batch-QPS benchmark — single-query throughput vs cache-blocked batched search,
+measured on REAL embeddings (no synthetic codes).
 
-Isolates the part the batching optimization actually touches: the binary
-Hamming scan. It compares three ways of resolving the SAME workload (m queries,
-full-DB top-k) on synthetic packed codes:
+Isolates the part the batching optimization actually touches — the binary
+Hamming scan — on real MS1MV2 (or whatever DATA_TAG points at). It loads the
+real embeddings, quantizes them with the production PCA+ITQ pipeline, then
+compares three ways of resolving the SAME workload (m queries, full-DB top-k):
 
-    1. per-query     — loop calling hamming_topk once per query (the status quo)
-    2. batched-serial — hamming_topk_batch(..., parallel=False)
+    1. per-query        — loop calling hamming_topk once per query (status quo)
+    2. batched-serial   — hamming_topk_batch(..., parallel=False)
     3. batched-parallel — hamming_topk_batch(..., parallel=True), cache-blocked
 
 The cosine rerank is identical on every path, so it is deliberately left out;
-this measures the scan throughput in isolation. A correctness gate runs first:
-the batched top-k DISTANCES must equal the true k-smallest before any QPS is
-reported (ties may reorder indices, so distances are the invariant).
+this measures scan throughput in isolation. A correctness gate runs first on
+real codes: the batched top-k DISTANCES must equal the true k-smallest before
+any QPS is reported (ties may reorder indices, so distances are the invariant).
 
 The win is memory-bandwidth driven, so it only appears once the DB exceeds
-last-level cache (500K-1M on x86). On a cache-resident DB (small N, or a big
-desktop LLC) the numbers converge — that is expected, not a regression.
+last-level cache (500K-1M). On a cache-resident DB the numbers converge — that
+is expected, not a regression.
 
 Writes results/bench_batch_qps.json so it checks in alongside the others.
 
 Usage:
-    python benchmarks/bench_batch_qps.py [--scales 100K,500K,1M] \
-        [--n-bits 512] [--queries 1000] [--n-candidates 100]
+    python benchmarks/bench_batch_qps.py --data-tag ms1m \
+        [--scales 100K,500K,1M] [--n-bits 512] [--queries 1000] \
+        [--n-candidates 100]
 """
 import sys
+import os
 import time
 import json
 import argparse
 import platform
-import os
 from pathlib import Path
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from faceflash.pca_quantize import backend_info
+sys.path.insert(0, str(Path(__file__).parent))
+from faceflash.pca_quantize import PCABinaryQuantizer, backend_info
+# Reuse the single-source-of-truth real-data loader + identity-aware split.
+from bench_ann_comparison import load_data, split_queries
 
 try:
     import faceflash._core as core
@@ -58,7 +64,6 @@ def cpu_info():
     info = {"arch": platform.machine(), "cpu_count": os.cpu_count(),
             "avx512_vpopcntdq": False, "model": platform.processor()}
     try:
-        # Linux: read flags from /proc/cpuinfo
         with open("/proc/cpuinfo") as f:
             txt = f.read()
         info["avx512_vpopcntdq"] = "avx512_vpopcntdq" in txt
@@ -67,34 +72,28 @@ def cpu_info():
                 info["model"] = line.split(":", 1)[1].strip()
                 break
     except (FileNotFoundError, OSError):
-        pass  # non-Linux (e.g. macOS dev machine) — flag stays False
+        pass  # non-Linux dev machine — flag stays False
     return info
 
 
-def verify_correctness(rng):
-    """Batched top-k DISTANCES must equal the true k-smallest before timing."""
-    print("  Verifying batched output vs ground truth...")
-    cases = [
-        # (n_db, code_bytes, m, k)
-        (5000, 64, 50, 10),
-        (8000, 32, 40, 100),
-        (4000, 48, 64, 1),     # k=1
-        (3000, 64, 1, 16),     # m=1
-        (2000, 17, 33, 7),     # awkward code length, non-multiple of 8
-    ]
-    for n, cb, m, k in cases:
-        db = rng.integers(0, 256, (n, cb), dtype=np.uint8)
-        q = rng.integers(0, 256, (m, cb), dtype=np.uint8)
+def verify_correctness(db_codes, q_codes, k_values=(1, 10, 100)):
+    """Batched top-k DISTANCES must equal the true k-smallest, on REAL codes."""
+    print("  Verifying batched output vs ground truth (real codes)...")
+    # Keep the gate fast: a real sub-slice of the DB + a handful of queries.
+    sub = db_codes[: min(5000, len(db_codes))]
+    qs = q_codes[: min(40, len(q_codes))]
+    for k in k_values:
+        kk = min(k, len(sub))
         for parallel in (True, False):
-            flat = np.asarray(core.hamming_topk_batch(q, db, k, parallel)).reshape(m, k)
-            for i in range(m):
-                di = np.asarray(core.hamming_distances(q[i], db))
+            flat = np.asarray(core.hamming_topk_batch(qs, sub, kk, parallel)).reshape(len(qs), kk)
+            for i in range(len(qs)):
+                di = np.asarray(core.hamming_distances(qs[i], sub))
                 got = np.sort(di[flat[i]])
-                truth = np.sort(di)[:k]
+                truth = np.sort(di)[:kk]
                 assert np.array_equal(got, truth), (
-                    f"MISMATCH n={n} cb={cb} m={m} k={k} parallel={parallel} query={i}")
-        print(f"    n={n:>5} code={cb:>3}B m={m:>3} k={k:>3}: exact (parallel+serial) OK")
-    print("  All batched outputs are byte-exact on distances\n")
+                    f"MISMATCH k={kk} parallel={parallel} query={i}")
+        print(f"    k={kk:>3}: exact (parallel+serial) OK")
+    print("  Batched outputs are byte-exact on distances\n")
 
 
 def _qps_per_query(db, q, k, reps):
@@ -123,26 +122,27 @@ def _qps_batch(db, q, k, parallel, reps):
     return m / best
 
 
-def run_scale(n_db, n_bits, m, k, rng):
-    code_bytes = n_bits // 8
-    db = rng.integers(0, 256, (n_db, code_bytes), dtype=np.uint8)
-    q = rng.integers(0, 256, (m, code_bytes), dtype=np.uint8)
+def run_scale(db_codes, q_codes, n_db, scale_name, n_ids, k):
+    db = np.ascontiguousarray(db_codes[:n_db])
+    q = np.ascontiguousarray(q_codes)
+    m = len(q)
     db_mb = db.nbytes / 1024 / 1024
 
-    # Fewer reps as the DB grows (each pass is more expensive).
     reps = 5 if n_db <= 100_000 else (3 if n_db <= 500_000 else 2)
 
     per_q = _qps_per_query(db, q, k, reps)
     bser = _qps_batch(db, q, k, False, reps)
     bpar = _qps_batch(db, q, k, True, reps)
 
-    print(f"  {n_db:>9,} x {n_bits}b  (DB {db_mb:6.1f} MB)")
+    print(f"  {scale_name}: {n_db:,} faces ({n_ids:,} identities)  "
+          f"DB {db_mb:.1f} MB, {m} real queries")
     print(f"      per-query        : {per_q:>10,.0f} qps")
     print(f"      batched serial   : {bser:>10,.0f} qps   ({bser/per_q:4.1f}x)")
     print(f"      batched parallel : {bpar:>10,.0f} qps   ({bpar/per_q:4.1f}x)")
     return {
         "n_database": n_db,
-        "n_bits": n_bits,
+        "n_identities": n_ids,
+        "n_bits": db.shape[1] * 8,
         "db_mb": round(db_mb, 2),
         "queries": m,
         "n_candidates": k,
@@ -156,11 +156,13 @@ def run_scale(n_db, n_bits, m, k, rng):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Batch-QPS benchmark")
+    ap = argparse.ArgumentParser(description="Batch-QPS benchmark (real embeddings)")
     ap.add_argument("--scales", default="100K,500K,1M")
     ap.add_argument("--n-bits", type=int, default=512)
     ap.add_argument("--queries", type=int, default=1000)
     ap.add_argument("--n-candidates", type=int, default=100)
+    ap.add_argument("--data-tag", default=None,
+                    help="Dataset tag to load (e.g. 'ms1m'); sets DATA_TAG")
     args = ap.parse_args()
 
     if not HAS_BATCH:
@@ -168,33 +170,70 @@ def main():
               "extension (maturin develop --release).")
         sys.exit(1)
 
-    rng = np.random.default_rng(42)
+    if args.data_tag:
+        os.environ["DATA_TAG"] = args.data_tag
+
     cpu = cpu_info()
     print(f"Backend: {backend_info()}")
     print(f"CPU:     {cpu['model']}  ({cpu['cpu_count']} logical cores)")
     print(f"Arch:    {cpu['arch']}   AVX-512 VPOPCNTDQ: "
           f"{'yes' if cpu['avx512_vpopcntdq'] else 'no'}\n")
 
-    verify_correctness(rng)
+    # ── Real embeddings → identity-aware query split → PCA+ITQ codes ──────
+    print("  Loading real embeddings...")
+    embs, labels = load_data()
+    all_db, queries = split_queries(embs, labels, n_queries=args.queries)
+    n_ids_total = len(set(str(l) for l in labels))
+    print(f"  Database pool: {len(all_db):,} | Queries: {len(queries)} | "
+          f"Identities: {n_ids_total:,}")
+
+    print(f"  Fitting PCA+ITQ quantizer (n_bits={args.n_bits})...")
+    quant = PCABinaryQuantizer(n_bits=args.n_bits)
+    quant.fit(all_db[:5000])
+    db_codes = quant.encode(all_db)
+    q_codes = quant.encode(queries)
+    print(f"  Encoded: db {db_codes.shape}, queries {q_codes.shape}\n")
+
+    verify_correctness(db_codes, q_codes)
 
     out = {
-        "benchmark": "Batch QPS (per-query vs cache-blocked batched scan)",
+        "benchmark": "Batch QPS (per-query vs cache-blocked batched scan) — REAL data",
         "backend": backend_info(),
         "cpu": cpu,
+        "data_tag": os.environ.get("DATA_TAG", "(default)"),
+        "data_identities_total": n_ids_total,
         "n_bits": args.n_bits,
-        "queries": args.queries,
+        "queries": len(queries),
         "n_candidates": args.n_candidates,
         "batched_correct_vs_truth": True,
-        "note": ("scan-only throughput (rerank excluded, identical on all paths); "
-                 "bandwidth win appears once DB > last-level cache"),
+        "note": ("real MS1MV2 codes; scan-only throughput (rerank excluded, "
+                 "identical on all paths); bandwidth win appears once DB > LLC"),
         "scales": {},
     }
+
+    ran_any = False
     for tag in args.scales.split(","):
         tag = tag.strip()
-        if tag not in SCALE_MAP:
+        n = SCALE_MAP.get(tag)
+        if n is None:
             continue
+        if n > len(db_codes):
+            print(f"  WARNING: scale {tag} ({n:,}) exceeds available "
+                  f"({len(db_codes):,}) — skipping")
+            continue
+        n_ids = len(set(str(labels[i]) for i in range(min(n, len(labels)))))
         out["scales"][tag] = run_scale(
-            SCALE_MAP[tag], args.n_bits, args.queries, args.n_candidates, rng)
+            db_codes, q_codes, n, tag, n_ids, args.n_candidates)
+        ran_any = True
+
+    if not ran_any:
+        # Fall back to whatever real data we have.
+        n = len(db_codes)
+        tag = f"{n // 1000}K"
+        n_ids = len(set(str(l) for l in labels))
+        print(f"  Falling back to single scale: {tag}")
+        out["scales"][tag] = run_scale(db_codes, q_codes, n, tag, n_ids,
+                                       args.n_candidates)
 
     RESULTS_DIR.mkdir(exist_ok=True)
     with open(RESULTS_DIR / "bench_batch_qps.json", "w") as f:

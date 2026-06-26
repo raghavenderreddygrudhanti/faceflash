@@ -259,16 +259,17 @@ log ""
 
 # ─────────────────────────────────────────────────────────────────────────
 # Step 4d-bis: Batch QPS — single-query vs cache-blocked batched throughput.
-# The batched scan tiles the DB into cache-sized blocks and reuses each block
-# across all queries in a chunk, so the DB streams from RAM ~once per thread
-# instead of once per query. This is where the x86 win shows (DB > LLC at
-# 500K-1M), unlike single-query parallel which is bandwidth-bound (~1.3x).
-# Self-validates correctness, reports per-query vs batched QPS + the
-# AVX-512 VPOPCNTDQ flag (the next compute-bound lever). → bench_batch_qps.json
+# Runs on REAL MS1MV2 codes (PCA+ITQ quantized), not synthetic. The batched
+# scan tiles the DB into cache-sized blocks and reuses each block across all
+# queries in a chunk, so the DB streams from RAM ~once per thread instead of
+# once per query. This is where the x86 win shows (DB > LLC at 500K-1M),
+# unlike single-query parallel which is bandwidth-bound (~1.3x). Self-validates
+# correctness, reports per-query vs batched QPS + the AVX-512 VPOPCNTDQ flag
+# (the next compute-bound lever). → bench_batch_qps.json
 # ─────────────────────────────────────────────────────────────────────────
-log "  Running batch-QPS benchmark (per-query vs cache-blocked batched)..."
-python benchmarks/bench_batch_qps.py --scales 100K,500K,1M --queries 1000 \
-    2>&1 | tee -a "$LOG_FILE" || true
+log "  Running batch-QPS benchmark (per-query vs cache-blocked batched, real MS1MV2)..."
+DATA_TAG=ms1m python benchmarks/bench_batch_qps.py --scales 100K,500K,1M \
+    --queries 1000 --data-tag ms1m 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
 
