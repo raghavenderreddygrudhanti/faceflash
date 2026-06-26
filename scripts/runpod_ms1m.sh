@@ -89,16 +89,17 @@ fi
 
 # Rust backend (POPCNT) — maturin builds faceflash._core into the package.
 # Run from repo root (where pyproject.toml lives), NOT from rust/.
-if ! python -c "from faceflash import _core" 2>/dev/null; then
-    log "  Building Rust backend (maturin develop)..."
-    if ! command -v cargo &>/dev/null; then
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source "$HOME/.cargo/env"
-    fi
-    maturin develop --release 2>&1 | tail -3
+# ALWAYS rebuild: a reused pod may carry a stale _core from an earlier commit,
+# and skipping the build would silently benchmark the old kernel. Cargo's
+# incremental cache makes a no-op rebuild fast.
+log "  Building Rust backend (maturin develop --release)..."
+if ! command -v cargo &>/dev/null; then
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 fi
+source "$HOME/.cargo/env" 2>/dev/null
+maturin develop --release 2>&1 | tail -3
 python -c "from faceflash import _core" 2>/dev/null || { log "  ✗ Rust backend failed to build — cannot benchmark"; exit 1; }
-log "  ✓ Rust backend ready"
+log "  ✓ Rust backend ready (freshly built)"
 
 # ArcFace model
 MODEL_DIR="$HOME/.faceflash/models"
