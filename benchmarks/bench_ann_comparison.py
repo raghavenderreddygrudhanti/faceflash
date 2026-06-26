@@ -547,7 +547,8 @@ def main():
         os.environ['DATA_TAG'] = args.data_tag
 
     requested_scales = [s.strip() for s in args.scales.split(",")]
-    scale_map = {"100K": 100000, "500K": 500000, "1M": 1000000}
+    scale_map = {"100K": 100000, "200K": 200000, "300K": 300000,
+                 "500K": 500000, "1M": 1000000}
 
     print("╔═══════════════════════════════════════════════════════════════════════╗")
     print("║  FaceFlash — ANN Comparison Benchmark                                ║")
@@ -573,7 +574,7 @@ def main():
     all_db, queries = split_queries(embs, labels, n_queries=args.queries)
     print(f"  Database pool: {len(all_db):,} | Queries: {len(queries)}")
 
-    # Determine which scales we can run
+    # Determine which scales we can run (tile real data if needed for throughput)
     scales_to_run = []
     for s in requested_scales:
         n = scale_map.get(s)
@@ -581,9 +582,11 @@ def main():
             print(f"  WARNING: Unknown scale '{s}', skipping")
             continue
         if n > len(all_db):
-            print(f"  WARNING: Scale {s} ({n:,}) exceeds available data "
-                  f"({len(all_db):,}), skipping")
-            continue
+            # Tile real embeddings to reach the target — preserves cosine
+            # distribution while allowing competitive comparison at larger scales.
+            reps_needed = int(np.ceil(n / len(all_db)))
+            print(f"  NOTE: Scale {s} ({n:,}) > available ({len(all_db):,}) "
+                  f"— tiling real embeddings {reps_needed}x")
         scales_to_run.append((s, n))
 
     if not scales_to_run:
@@ -612,7 +615,12 @@ def main():
     }
 
     for scale_name, n_db in scales_to_run:
-        database = np.ascontiguousarray(all_db[:n_db])
+        if n_db <= len(all_db):
+            database = np.ascontiguousarray(all_db[:n_db])
+        else:
+            # Tile real embeddings to reach the target scale
+            reps = int(np.ceil(n_db / len(all_db)))
+            database = np.ascontiguousarray(np.tile(all_db, (reps, 1))[:n_db])
         n_ids = len(set(str(labels[i]) for i in range(min(n_db, len(labels)))))
 
         gt = compute_ground_truth(database, queries)

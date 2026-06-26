@@ -205,7 +205,7 @@ log ""
 # Step 3: ANN comparison on MS1MV2
 # ─────────────────────────────────────────────────────────────────────────
 log "  Running ANN comparison on MS1MV2 (85K identities)..."
-python benchmarks/bench_ann_comparison.py --scales 100K,500K,1M --queries 1000 \
+python benchmarks/bench_ann_comparison.py --scales 100K,200K,300K,500K,1M --queries 1000 \
     --data-tag ms1m 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
@@ -242,7 +242,7 @@ log ""
 # Full scan vs clustered recall@1 + latency, sweeping n_probe.
 # ─────────────────────────────────────────────────────────────────────────
 log "  Running coarse-clustering benchmark (full scan vs IVF, real MS1MV2)..."
-DATA_TAG=ms1m python benchmarks/bench_clustering.py --scales 100K,500K,1M \
+DATA_TAG=ms1m python benchmarks/bench_clustering.py --scales 100K,200K,300K,500K,1M \
     --queries 1000 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
@@ -281,6 +281,16 @@ log ""
 log "  Running n_bits × candidates grid (recall/CI on real MS1MV2)..."
 DATA_TAG=ms1m python benchmarks/bench_nbits_grid.py --queries 1000 \
     2>&1 | tee -a "$LOG_FILE" || true
+
+log ""
+
+# ─────────────────────────────────────────────────────────────────────────
+# Step 4f: On-device memory measurement (actual RSS, not modeled).
+# Measures committed RAM at each stage — the ground truth for the
+# "48–96× less memory" claim. Writes results/bench_memory.json.
+# ─────────────────────────────────────────────────────────────────────────
+log "  Running on-device memory measurement (actual RSS)..."
+DATA_TAG=ms1m python benchmarks/bench_memory.py --scale 100K 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
 log "  ✓ MS1MV2 benchmarks complete"
@@ -327,6 +337,8 @@ echo "       results/bench_identification_ms1m.json   (1:N rank-1, 85K gallery)"
 echo "       results/bench_alignment.json             (Haar vs RetinaFace, LFW)"
 echo "       results/bench_clustering.json            (full scan vs IVF clustering)"
 echo "       results/bench_simd.json                  (AVX2/NEON raw scan speed)"
+echo "       results/bench_batch_qps.json             (batched throughput vs single-query)"
+echo "       results/bench_memory.json                (actual RSS, on-device memory)"
 echo "       docs/figures/*.png                       (6 regenerated charts)"
 echo "   ➜ BUNDLE (download this): ${BUNDLE}"
 echo "═══════════════════════════════════════════════════════════════"

@@ -175,7 +175,13 @@ def main():
         os.environ["DATA_TAG"] = args.data_tag
 
     cpu = cpu_info()
+    simd_kernel = ""
+    try:
+        simd_kernel = core.simd_info()
+    except AttributeError:
+        simd_kernel = "unknown (simd_info not available)"
     print(f"Backend: {backend_info()}")
+    print(f"Kernel:  {simd_kernel}")
     print(f"CPU:     {cpu['model']}  ({cpu['cpu_count']} logical cores)")
     print(f"Arch:    {cpu['arch']}   AVX-512 VPOPCNTDQ: "
           f"{'yes' if cpu['avx512_vpopcntdq'] else 'no'}\n")
@@ -200,6 +206,7 @@ def main():
     out = {
         "benchmark": "Batch QPS (per-query vs cache-blocked batched scan) — REAL data",
         "backend": backend_info(),
+        "simd_kernel": simd_kernel,
         "cpu": cpu,
         "data_tag": os.environ.get("DATA_TAG", "(default)"),
         "data_identities_total": n_ids_total,

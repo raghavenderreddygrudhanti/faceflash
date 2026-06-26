@@ -1,13 +1,16 @@
 //! FaceFlash Core — Rust binary search engine.
-//! Hardware-accelerated Hamming distance via SIMD (AVX2/NEON) with scalar fallback.
+//! Hardware-accelerated Hamming distance via SIMD (AVX-512/NEON) with scalar fallback.
 //! Uses Rayon for optional parallelism.
 
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
+#[cfg(target_arch = "x86_64")]
+use std::sync::atomic::{AtomicU8, Ordering};
+
 // ─────────────────────────────────────────────────────────────────────────────
-// SIMD Hamming kernels — compile-time feature detection
+// SIMD Hamming kernels
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// AVX2 Hamming distance via vpshufb nibble-lookup popcount.
@@ -23,14 +26,11 @@ unsafe fn hamming_avx2(a: &[u8], b: &[u8]) -> u32 {
     let len = a.len();
     let mut i = 0;
 
-    // Process 32 bytes at a time with AVX2
     while i + 32 <= len {
         let va = _mm256_loadu_si256(a.as_ptr().add(i) as *const __m256i);
         let vb = _mm256_loadu_si256(b.as_ptr().add(i) as *const __m256i);
         let xor = _mm256_xor_si256(va, vb);
 
-        // Count bits using the standard POPCNT-via-lookup approach for AVX2:
-        // Split each byte into nibbles, lookup popcount in a table
         let low_mask = _mm256_set1_epi8(0x0f);
         let lookup = _mm256_setr_epi8(
             0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
@@ -43,10 +43,7 @@ unsafe fn hamming_avx2(a: &[u8], b: &[u8]) -> u32 {
         let popcnt_hi = _mm256_shuffle_epi8(lookup, hi);
         let sum = _mm256_add_epi8(popcnt_lo, popcnt_hi);
 
-        // Horizontal sum: sad against zero gives u64 sums of bytes
         let sad = _mm256_sad_epu8(sum, _mm256_setzero_si256());
-
-        // Extract the 4 u64 values and sum them
         dist += _mm256_extract_epi64(sad, 0) as u32;
         dist += _mm256_extract_epi64(sad, 1) as u32;
         dist += _mm256_extract_epi64(sad, 2) as u32;
@@ -55,7 +52,52 @@ unsafe fn hamming_avx2(a: &[u8], b: &[u8]) -> u32 {
         i += 32;
     }
 
-    // Handle remaining bytes with scalar POPCNT
+    while i + 8 <= len {
+        let x = (a.as_ptr().add(i) as *const u64).read_unaligned();
+        let y = (b.as_ptr().add(i) as *const u64).read_unaligned();
+        dist += (x ^ y).count_ones();
+        i += 8;
+    }
+    while i < len {
+        dist += (a[i] ^ b[i]).count_ones();
+        i += 1;
+    }
+
+    dist
+}
+
+/// AVX-512 VPOPCNTDQ Hamming distance: processes 64 bytes (512 bits) per
+/// iteration using native 512-bit popcount. Available on Ice Lake, Zen 4+,
+/// EPYC 9004+. This is the fastest path — a single 512-bit code is one load,
+/// one XOR, one popcount, one horizontal reduce.
+///
+/// Unlike the AVX2 vpshufb approach (which lost to scalar POPCNT), VPOPCNTDQ
+/// is a true hardware popcount at 8x the width of scalar POPCNT. It wins
+/// when the workload is compute-bound (cache-blocked batched scan).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512bw,avx512vpopcntdq")]
+unsafe fn hamming_avx512_vpopcntdq(a: &[u8], b: &[u8]) -> u32 {
+    use std::arch::x86_64::*;
+    let mut dist: u32 = 0;
+    let len = a.len();
+    let mut i = 0;
+
+    // Process 64 bytes at a time — one full 512-bit code per iteration.
+    while i + 64 <= len {
+        let va = _mm512_loadu_si512(a.as_ptr().add(i) as *const _);
+        let vb = _mm512_loadu_si512(b.as_ptr().add(i) as *const _);
+        let xor = _mm512_xor_si512(va, vb);
+
+        // Native 512-bit popcount: counts bits in each 64-bit lane.
+        let popcnt = _mm512_popcnt_epi64(xor);
+
+        // Horizontal sum of 8 × u64 lanes → total Hamming distance for this chunk.
+        dist += _mm512_reduce_add_epi64(popcnt) as u32;
+
+        i += 64;
+    }
+
+    // Handle remainder with scalar POPCNT (for codes not a multiple of 64 bytes).
     while i + 8 <= len {
         let x = (a.as_ptr().add(i) as *const u64).read_unaligned();
         let y = (b.as_ptr().add(i) as *const u64).read_unaligned();
@@ -79,22 +121,16 @@ unsafe fn hamming_neon(a: &[u8], b: &[u8]) -> u32 {
     let len = a.len();
     let mut i = 0;
 
-    // Process 16 bytes at a time with NEON
     while i + 16 <= len {
         let va = vld1q_u8(a.as_ptr().add(i));
         let vb = vld1q_u8(b.as_ptr().add(i));
         let xor = veorq_u8(va, vb);
-
-        // ARM has native vcntq_u8 (popcount per byte)
         let cnt = vcntq_u8(xor);
-
-        // Sum all bytes: vaddlvq gives total across all lanes
         dist += vaddlvq_u8(cnt) as u32;
 
         i += 16;
     }
 
-    // Handle remaining bytes with scalar
     while i + 8 <= len {
         let x = (a.as_ptr().add(i) as *const u64).read_unaligned();
         let y = (b.as_ptr().add(i) as *const u64).read_unaligned();
@@ -132,19 +168,48 @@ fn hamming_scalar(a: &[u8], b: &[u8]) -> u32 {
     dist
 }
 
-/// Dispatch to the best available SIMD kernel at runtime.
-/// NOTE: On x86_64 with hardware POPCNT, the scalar path (count_ones → POPCNT)
-/// is faster than AVX2 vpshufb lookup. AVX2 is kept for reference but NOT used.
+// ─────────────────────────────────────────────────────────────────────────────
+// Runtime dispatch — detect AVX-512 VPOPCNTDQ once, then use it everywhere.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Cached detection result: 0 = unchecked, 1 = available, 2 = not available.
+#[cfg(target_arch = "x86_64")]
+static AVX512_VPOPCNTDQ_AVAILABLE: AtomicU8 = AtomicU8::new(0);
+
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn has_avx512_vpopcntdq() -> bool {
+    let cached = AVX512_VPOPCNTDQ_AVAILABLE.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached == 1;
+    }
+    let result = is_x86_feature_detected!("avx512vpopcntdq")
+        && is_x86_feature_detected!("avx512f")
+        && is_x86_feature_detected!("avx512bw");
+    AVX512_VPOPCNTDQ_AVAILABLE.store(if result { 1 } else { 2 }, Ordering::Relaxed);
+    result
+}
+
+/// Dispatch to the best available kernel at runtime.
+///
+/// Priority: AVX-512 VPOPCNTDQ (x86) > NEON (ARM) > scalar POPCNT.
+///
+/// On x86 without VPOPCNTDQ, scalar POPCNT (count_ones → hardware instruction)
+/// is faster than AVX2 vpshufb, so we skip AVX2 entirely.
 #[inline(always)]
 fn hamming(a: &[u8], b: &[u8]) -> u32 {
     #[cfg(target_arch = "aarch64")]
     {
-        // NEON vcntq_u8 is a native byte popcount — always faster on ARM
         return unsafe { hamming_neon(a, b) };
     }
 
-    // On x86_64: scalar count_ones() compiles to hardware POPCNT instruction,
-    // which is faster than the AVX2 vpshufb nibble-lookup approach.
+    #[cfg(target_arch = "x86_64")]
+    {
+        if has_avx512_vpopcntdq() {
+            return unsafe { hamming_avx512_vpopcntdq(a, b) };
+        }
+    }
+
     #[allow(unreachable_code)]
     hamming_scalar(a, b)
 }
@@ -400,5 +465,26 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hamming_topk, m)?)?;
     m.add_function(wrap_pyfunction!(hamming_topk_parallel, m)?)?;
     m.add_function(wrap_pyfunction!(hamming_topk_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(simd_info, m)?)?;
     Ok(())
+}
+
+/// Report which SIMD kernel is active on this CPU (for benchmark logging).
+#[pyfunction]
+fn simd_info() -> String {
+    #[cfg(target_arch = "aarch64")]
+    {
+        return "NEON vcntq_u8 (native byte popcount)".to_string();
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if has_avx512_vpopcntdq() {
+            return "AVX-512 VPOPCNTDQ (native 512-bit popcount)".to_string();
+        }
+        return "scalar POPCNT (hardware u64 popcount)".to_string();
+    }
+
+    #[allow(unreachable_code)]
+    "scalar (software popcount)".to_string()
 }
