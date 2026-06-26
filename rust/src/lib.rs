@@ -262,20 +262,78 @@ fn hamming_topk_parallel<'py>(
     PyArray1::from_vec_bound(py, indices)
 }
 
-/// Serial top-k over a database for a single query slice. Shared helper.
+/// Cache-block target in bytes. We tile the database so one block of codes
+/// stays resident in L2 while every query in the chunk is scored against it —
+/// the database is streamed from RAM ~once per thread instead of once per
+/// query. This sidesteps the memory-bandwidth wall that caps the naive
+/// "parallelize over queries" approach once the DB exceeds last-level cache.
+const BLOCK_BYTES: usize = 256 * 1024;
+
+/// Reduce a per-query candidate buffer to the k smallest (sorted ascending by
+/// distance) and write their indices into `out` (len == k).
 #[inline]
-fn topk_one(q: &[u8], db: &numpy::ndarray::ArrayView2<u8>, k: usize) -> Vec<u64> {
-    let n = db.shape()[0];
-    let k = k.min(n);
-    if k == 0 {
-        return Vec::new();
+fn finalize(buf: &mut Vec<(u32, u64)>, k: usize, out: &mut [u64]) {
+    let kk = k.min(buf.len());
+    if kk == 0 {
+        return;
     }
-    let mut dist_idx: Vec<(u32, u64)> = (0..n)
-        .map(|i| (hamming(db.row(i).to_slice().unwrap(), q), i as u64))
-        .collect();
-    dist_idx.select_nth_unstable_by_key(k - 1, |&(d, _)| d);
-    dist_idx[..k].sort_unstable_by_key(|&(d, _)| d);
-    dist_idx[..k].iter().map(|&(_, i)| i).collect()
+    buf.select_nth_unstable_by_key(kk - 1, |&(d, _)| d);
+    buf[..kk].sort_unstable_by_key(|&(d, _)| d);
+    for (slot, &(_, idx)) in out.iter_mut().zip(buf[..kk].iter()) {
+        *slot = idx;
+    }
+}
+
+/// Score a chunk of queries against the whole database with cache-blocking.
+///
+/// Loop order is (DB block) → (query) → (row within block): the block is
+/// loaded once and reused across every query in the chunk while it's hot in
+/// cache. Each query keeps its own bounded candidate buffer + running k-th-best
+/// threshold so work stays ~O(N) per query without an O(N) materialization.
+/// Writes query qi's k indices into out[qi*k .. qi*k + k].
+fn process_chunk(
+    q_rows: &[&[u8]],
+    db: &numpy::ndarray::ArrayView2<u8>,
+    k: usize,
+    block_rows: usize,
+    out: &mut [u64],
+) {
+    let n = db.shape()[0];
+    let qn = q_rows.len();
+    if qn == 0 || k == 0 {
+        return;
+    }
+    let mut bufs: Vec<Vec<(u32, u64)>> =
+        (0..qn).map(|_| Vec::with_capacity(4 * k)).collect();
+    let mut worst: Vec<u32> = vec![u32::MAX; qn];
+
+    let mut bstart = 0;
+    while bstart < n {
+        let bend = (bstart + block_rows).min(n);
+        for (qi, q) in q_rows.iter().enumerate() {
+            let buf = &mut bufs[qi];
+            let w = worst[qi];
+            for r in bstart..bend {
+                let d = hamming(db.row(r).to_slice().unwrap(), q);
+                // Always fill until we have k; after that only keep contenders.
+                if buf.len() < k || d <= w {
+                    buf.push((d, r as u64));
+                }
+            }
+            // Trim once the buffer drifts past k; refresh the threshold to the
+            // current k-th smallest distance.
+            if buf.len() >= 2 * k {
+                buf.select_nth_unstable_by_key(k - 1, |&(d, _)| d);
+                buf.truncate(k);
+                worst[qi] = buf.iter().map(|&(d, _)| d).max().unwrap_or(u32::MAX);
+            }
+        }
+        bstart = bend;
+    }
+
+    for (qi, buf) in bufs.iter_mut().enumerate() {
+        finalize(buf, k, &mut out[qi * k..qi * k + k]);
+    }
 }
 
 /// Batched top-k: process many queries in a single FFI call.
@@ -283,9 +341,10 @@ fn topk_one(q: &[u8], db: &numpy::ndarray::ArrayView2<u8>, k: usize) -> Vec<u64>
 /// Returns a flat (m * k) array of database indices, row-major: query 0's
 /// top-k first, then query 1's, etc. Reshape to (m, k) on the Python side.
 ///
-/// Parallelism is over queries (embarrassingly parallel, scales linearly with
-/// cores) when `parallel=True`. The single FFI crossing amortizes the
-/// Python↔Rust overhead that dominates per-query QPS in tight benchmark loops.
+/// With `parallel=True` the query set is split into chunks (≈ a couple per
+/// core); each thread cache-blocks the database for its chunk (see
+/// `process_chunk`). This is the throughput path — measure it as QPS, not
+/// single-query latency.
 #[pyfunction]
 #[pyo3(signature = (queries, database, k, parallel=true))]
 fn hamming_topk_batch<'py>(
@@ -299,22 +358,36 @@ fn hamming_topk_batch<'py>(
     let db = database.as_array();
     let m = q.shape()[0];
     let n = db.shape()[0];
-    let kk = k.min(n);
+    let code_len = db.shape()[1].max(1);
+    let k = k.min(n);
 
-    let result: Vec<u64> = if parallel {
-        // Collect query slices first so rayon can split the work over queries.
-        let qrows: Vec<&[u8]> = (0..m).map(|i| q.row(i).to_slice().unwrap()).collect();
-        qrows
-            .par_iter()
-            .flat_map_iter(|qr| topk_one(qr, &db, kk))
-            .collect()
+    let mut out = vec![0u64; m * k];
+    if k == 0 || m == 0 {
+        return PyArray1::from_vec_bound(py, out);
+    }
+
+    let block_rows = (BLOCK_BYTES / code_len).max(1);
+    let q_rows: Vec<&[u8]> = (0..m).map(|i| q.row(i).to_slice().unwrap()).collect();
+
+    if parallel && m > 1 {
+        let n_threads = rayon::current_num_threads().max(1);
+        // ~2 chunks per thread → disjoint query ranges, no merge, no locks.
+        let n_chunks = (n_threads * 2).min(m).max(1);
+        let chunk = m.div_ceil(n_chunks);
+        out.par_chunks_mut(chunk * k)
+            .enumerate()
+            .for_each(|(ci, out_slice)| {
+                let qs = ci * chunk;
+                let qe = (qs + chunk).min(m);
+                if qs < qe {
+                    process_chunk(&q_rows[qs..qe], &db, k, block_rows, out_slice);
+                }
+            });
     } else {
-        (0..m)
-            .flat_map(|i| topk_one(q.row(i).to_slice().unwrap(), &db, kk))
-            .collect()
-    };
+        process_chunk(&q_rows[..], &db, k, block_rows, &mut out);
+    }
 
-    PyArray1::from_vec_bound(py, result)
+    PyArray1::from_vec_bound(py, out)
 }
 
 #[pymodule]
