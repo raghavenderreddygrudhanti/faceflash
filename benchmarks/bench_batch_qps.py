@@ -49,7 +49,8 @@ except ImportError:
     import faceflash_core as core
 
 RESULTS_DIR = Path(__file__).parent.parent / "results"
-SCALE_MAP = {"100K": 100_000, "500K": 500_000, "1M": 1_000_000}
+SCALE_MAP = {"100K": 100_000, "200K": 200_000, "300K": 300_000,
+             "500K": 500_000, "1M": 1_000_000}
 
 HAS_BATCH = hasattr(core, "hamming_topk_batch")
 
@@ -157,7 +158,7 @@ def run_scale(db_codes, q_codes, n_db, scale_name, n_ids, k):
 
 def main():
     ap = argparse.ArgumentParser(description="Batch-QPS benchmark (real embeddings)")
-    ap.add_argument("--scales", default="100K,500K,1M")
+    ap.add_argument("--scales", default="100K,200K,300K,500K,1M")
     ap.add_argument("--n-bits", type=int, default=512)
     ap.add_argument("--queries", type=int, default=1000)
     ap.add_argument("--n-candidates", type=int, default=100)

@@ -268,7 +268,7 @@ log ""
 # (the next compute-bound lever). → bench_batch_qps.json
 # ─────────────────────────────────────────────────────────────────────────
 log "  Running batch-QPS benchmark (per-query vs cache-blocked batched, real MS1MV2)..."
-DATA_TAG=ms1m python benchmarks/bench_batch_qps.py --scales 100K,500K,1M \
+DATA_TAG=ms1m python benchmarks/bench_batch_qps.py --scales 100K,200K,300K,500K,1M \
     --queries 1000 --data-tag ms1m 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
