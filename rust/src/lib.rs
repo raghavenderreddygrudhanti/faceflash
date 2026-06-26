@@ -130,20 +130,21 @@ fn hamming_scalar(a: &[u8], b: &[u8]) -> u32 {
 }
 
 /// Dispatch to the best available SIMD kernel at runtime.
+/// NOTE: On x86_64 with hardware POPCNT, the scalar path (count_ones → POPCNT)
+/// is faster than AVX2 vpshufb lookup. AVX2 is kept for reference but NOT used.
 #[inline(always)]
 fn hamming(a: &[u8], b: &[u8]) -> u32 {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if is_x86_feature_detected!("avx2") {
-            return unsafe { hamming_avx2(a, b) };
-        }
-    }
-
     #[cfg(target_arch = "aarch64")]
     {
-        // NEON is always available on aarch64
+        // NEON vcntq_u8 is a native byte popcount — always faster on ARM
         return unsafe { hamming_neon(a, b) };
     }
+
+    // On x86_64: scalar count_ones() compiles to hardware POPCNT instruction,
+    // which is faster than the AVX2 vpshufb nibble-lookup approach.
+    #[allow(unreachable_code)]
+    hamming_scalar(a, b)
+}
 
     #[allow(unreachable_code)]
     hamming_scalar(a, b)
