@@ -190,7 +190,9 @@ def chart_rank1():
         names.append(nm)
         vals.append(r["rank1"] * 100)
         cols.append(MUTED if "exact" in r["method"] else ACCENT)
-    ceiling = next(r["rank1"] * 100 for r in d["results"] if "exact" in r["method"])
+    # Exact ceiling if present (faiss available), else fall back to the best value
+    ceiling = next((r["rank1"] * 100 for r in d["results"] if "exact" in r["method"]),
+                   max(vals))
 
     fig, ax = plt.subplots(figsize=(8, 4.6))
     bars = ax.bar(names, vals, color=cols, width=0.62,
