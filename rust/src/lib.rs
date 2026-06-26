@@ -146,10 +146,6 @@ fn hamming(a: &[u8], b: &[u8]) -> u32 {
     hamming_scalar(a, b)
 }
 
-    #[allow(unreachable_code)]
-    hamming_scalar(a, b)
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Python-exposed functions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,11 +262,67 @@ fn hamming_topk_parallel<'py>(
     PyArray1::from_vec_bound(py, indices)
 }
 
+/// Serial top-k over a database for a single query slice. Shared helper.
+#[inline]
+fn topk_one(q: &[u8], db: &numpy::ndarray::ArrayView2<u8>, k: usize) -> Vec<u64> {
+    let n = db.shape()[0];
+    let k = k.min(n);
+    if k == 0 {
+        return Vec::new();
+    }
+    let mut dist_idx: Vec<(u32, u64)> = (0..n)
+        .map(|i| (hamming(db.row(i).to_slice().unwrap(), q), i as u64))
+        .collect();
+    dist_idx.select_nth_unstable_by_key(k - 1, |&(d, _)| d);
+    dist_idx[..k].sort_unstable_by_key(|&(d, _)| d);
+    dist_idx[..k].iter().map(|&(_, i)| i).collect()
+}
+
+/// Batched top-k: process many queries in a single FFI call.
+///
+/// Returns a flat (m * k) array of database indices, row-major: query 0's
+/// top-k first, then query 1's, etc. Reshape to (m, k) on the Python side.
+///
+/// Parallelism is over queries (embarrassingly parallel, scales linearly with
+/// cores) when `parallel=True`. The single FFI crossing amortizes the
+/// Python↔Rust overhead that dominates per-query QPS in tight benchmark loops.
+#[pyfunction]
+#[pyo3(signature = (queries, database, k, parallel=true))]
+fn hamming_topk_batch<'py>(
+    py: Python<'py>,
+    queries: PyReadonlyArray2<'py, u8>,
+    database: PyReadonlyArray2<'py, u8>,
+    k: usize,
+    parallel: bool,
+) -> Bound<'py, PyArray1<u64>> {
+    let q = queries.as_array();
+    let db = database.as_array();
+    let m = q.shape()[0];
+    let n = db.shape()[0];
+    let kk = k.min(n);
+
+    let result: Vec<u64> = if parallel {
+        // Collect query slices first so rayon can split the work over queries.
+        let qrows: Vec<&[u8]> = (0..m).map(|i| q.row(i).to_slice().unwrap()).collect();
+        qrows
+            .par_iter()
+            .flat_map_iter(|qr| topk_one(qr, &db, kk))
+            .collect()
+    } else {
+        (0..m)
+            .flat_map(|i| topk_one(q.row(i).to_slice().unwrap(), &db, kk))
+            .collect()
+    };
+
+    PyArray1::from_vec_bound(py, result)
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hamming_distances, m)?)?;
     m.add_function(wrap_pyfunction!(hamming_distances_parallel, m)?)?;
     m.add_function(wrap_pyfunction!(hamming_topk, m)?)?;
     m.add_function(wrap_pyfunction!(hamming_topk_parallel, m)?)?;
+    m.add_function(wrap_pyfunction!(hamming_topk_batch, m)?)?;
     Ok(())
 }

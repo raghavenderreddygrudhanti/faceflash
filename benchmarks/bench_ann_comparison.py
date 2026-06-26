@@ -376,6 +376,44 @@ def bench_faceflash(database, queries, gt, configs=None):
         r["float_vectors_mb"] = round(database.nbytes / 1024 / 1024, 2)
         results.append(r)
 
+    # Batched throughput: process ALL queries in one FFI call. This is the
+    # bulk/identification path — it amortizes the Python<->Rust crossing and
+    # parallelizes over queries. Reports QPS for the whole batch (and the
+    # equivalent per-query latency), not single-query interactive latency.
+    if HAS_RUST and 512 in quantizers and hasattr(faceflash_core, "hamming_topk_batch"):
+        pca, db_codes = quantizers[512]
+        q_codes = np.ascontiguousarray(q_codes_cache[512], dtype=np.uint8)
+        n_cand = min(100, len(database) - 1)
+
+        # warmup
+        faceflash_core.hamming_topk_batch(q_codes[:min(10, len(q_codes))], db_codes, n_cand, True)
+
+        t0 = time.perf_counter()
+        flat = faceflash_core.hamming_topk_batch(q_codes, db_codes, n_cand, True)
+        cand = np.asarray(flat).astype(np.intp).reshape(len(queries), -1)
+        # cosine rerank (vectorized per query)
+        preds = np.empty(len(queries), dtype=np.intp)
+        for i in range(len(queries)):
+            ci = cand[i]
+            preds[i] = ci[np.argmax(database[ci] @ queries[i])]
+        total_s = time.perf_counter() - t0
+
+        correct = int(np.sum(preds == np.asarray(gt)))
+        results.append({
+            "method": "FaceFlash (512b/100c, batched)",
+            "recall_at_1": correct / len(queries),
+            "latency_mean_ms": float(total_s * 1000 / len(queries)),
+            "latency_median_ms": float(total_s * 1000 / len(queries)),
+            "latency_p95_ms": float(total_s * 1000 / len(queries)),
+            "latency_p99_ms": float(total_s * 1000 / len(queries)),
+            "qps": float(len(queries) / total_s),
+            "memory_mb": round(db_codes.nbytes / 1024 / 1024, 2),
+            "memory_note": "binary index only; batched multi-core scan (bulk throughput)",
+            "index_type": "binary_hash",
+            "params": {"n_bits": 512, "n_candidates": 100, "batched": True},
+            "float_vectors_mb": round(database.nbytes / 1024 / 1024, 2),
+        })
+
     return results
 
 
