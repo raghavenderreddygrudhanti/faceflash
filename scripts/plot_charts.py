@@ -225,22 +225,35 @@ def chart_clustering():
     save(fig, "chart_clustering_tradeoff")
 
 
-# ─── 6. SIMD scan speed ──────────────────────────────────────────────────────
+# ─── 6. SIMD scan speed: single vs parallel ──────────────────────────────────
 def chart_simd():
+    import numpy as np
     d = json.load(open(RES / "bench_simd.json"))
     scales = list(d["scales"].keys())
     single = [d["scales"][s]["single_threaded"]["mean_ms"] for s in scales]
-    fig, ax = plt.subplots(figsize=(7, 4.4))
-    bars = ax.bar(scales, single, color=ACCENT, width=0.5,
-                  edgecolor="white", linewidth=1.5, zorder=3)
-    for bar, v in zip(bars, single):
-        ax.text(bar.get_x() + bar.get_width() / 2, v, f"{v:.2f} ms",
-                ha="center", va="bottom", fontsize=12, fontweight="bold", color=ACCENT_DK)
+    par = [d["scales"][s]["parallel"]["mean_ms"] for s in scales]
+    x = np.arange(len(scales))
+    w = 0.36
+    fig, ax = plt.subplots(figsize=(7.5, 4.6))
+    b1 = ax.bar(x - w/2, single, w, label="single thread", color=MUTED,
+                edgecolor="white", linewidth=1.5, zorder=3)
+    b2 = ax.bar(x + w/2, par, w, label="multi-core", color=ACCENT,
+                edgecolor="white", linewidth=1.5, zorder=3)
+    for bar, v in zip(b1, single):   # single-thread: value above bar
+        ax.text(bar.get_x() + bar.get_width()/2, v, f"{v:.2f} ms",
+                ha="center", va="bottom", fontsize=10.5, color=SUBINK)
+    for i, (bar, v) in enumerate(zip(b2, par)):   # multi-core: value + speedup
+        sp = d["scales"][scales[i]]["parallel"].get("speedup_vs_single")
+        tag = f"{v:.2f} ms\n{sp:.1f}× faster" if sp else f"{v:.2f} ms"
+        ax.text(bar.get_x() + bar.get_width()/2, v, tag,
+                ha="center", va="bottom", fontsize=10.5, fontweight="bold", color=ACCENT_DK)
+    ax.set_xticks(x); ax.set_xticklabels(scales)
     ax.set_ylabel("Hamming scan latency (ms) — lower is better")
-    ax.set_ylim(0, max(single) * 1.25)
+    ax.set_ylim(0, max(single) * 1.28)
     ax.grid(axis="x", visible=False)
-    titled(ax, "Raw binary-scan speed",
-           f"{d['arch']}, single thread · AVX2 on x86 · NEON on ARM")
+    ax.legend(frameon=False, loc="upper left")
+    titled(ax, "Binary-scan speed: single vs multi-core",
+           f"{d['arch']} · AVX2 on x86 · NEON on ARM")
     save(fig, "chart_simd_speed")
 
 
