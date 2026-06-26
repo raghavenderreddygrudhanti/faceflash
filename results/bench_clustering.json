@@ -10,39 +10,80 @@
       "n_queries": 1000,
       "n_clusters": 316,
       "full_scan": {
-        "recall_at_1": 0.992,
-        "latency_mean_ms": 0.9983
+        "recall_at_1": 1.0,
+        "latency_mean_ms": 0.3063
       },
       "clustered": [
         {
           "n_probe": 4,
-          "recall_at_1": 0.819,
-          "latency_mean_ms": 0.1588,
-          "speedup_vs_full": 6.29
+          "recall_at_1": 0.863,
+          "latency_mean_ms": 0.07,
+          "speedup_vs_full": 4.38
         },
         {
           "n_probe": 8,
-          "recall_at_1": 0.896,
-          "latency_mean_ms": 0.0996,
-          "speedup_vs_full": 10.02
+          "recall_at_1": 0.931,
+          "latency_mean_ms": 0.0857,
+          "speedup_vs_full": 3.57
         },
         {
           "n_probe": 16,
-          "recall_at_1": 0.936,
-          "latency_mean_ms": 0.1457,
-          "speedup_vs_full": 6.85
+          "recall_at_1": 0.961,
+          "latency_mean_ms": 0.1166,
+          "speedup_vs_full": 2.63
         },
         {
           "n_probe": 32,
-          "recall_at_1": 0.968,
-          "latency_mean_ms": 0.243,
-          "speedup_vs_full": 4.11
+          "recall_at_1": 0.985,
+          "latency_mean_ms": 0.1726,
+          "speedup_vs_full": 1.77
         },
         {
           "n_probe": 64,
-          "recall_at_1": 0.992,
-          "latency_mean_ms": 0.4133,
-          "speedup_vs_full": 2.42
+          "recall_at_1": 0.993,
+          "latency_mean_ms": 0.2839,
+          "speedup_vs_full": 1.08
+        }
+      ]
+    },
+    "500K": {
+      "n_database": 500000,
+      "n_queries": 1000,
+      "n_clusters": 707,
+      "full_scan": {
+        "recall_at_1": 1.0,
+        "latency_mean_ms": 1.5417
+      },
+      "clustered": [
+        {
+          "n_probe": 4,
+          "recall_at_1": 0.702,
+          "latency_mean_ms": 0.1274,
+          "speedup_vs_full": 12.1
+        },
+        {
+          "n_probe": 8,
+          "recall_at_1": 0.798,
+          "latency_mean_ms": 0.1892,
+          "speedup_vs_full": 8.15
+        },
+        {
+          "n_probe": 16,
+          "recall_at_1": 0.879,
+          "latency_mean_ms": 0.3078,
+          "speedup_vs_full": 5.01
+        },
+        {
+          "n_probe": 32,
+          "recall_at_1": 0.928,
+          "latency_mean_ms": 0.5593,
+          "speedup_vs_full": 2.76
+        },
+        {
+          "n_probe": 64,
+          "recall_at_1": 0.97,
+          "latency_mean_ms": 1.1288,
+          "speedup_vs_full": 1.37
         }
       ]
     }
