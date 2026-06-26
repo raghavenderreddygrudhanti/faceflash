@@ -282,7 +282,8 @@ if ! git diff --cached --quiet 2>/dev/null; then
     if [ -n "$GITHUB_TOKEN" ]; then
         git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REMOTE_SLUG}.git"
     fi
-    git push origin HEAD:main && log "  ✓ Pushed to GitHub" || log "  ✗ Push failed (results still saved locally)"
+    CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+    git push origin "HEAD:${CUR_BRANCH}" && log "  ✓ Pushed to GitHub (${CUR_BRANCH})" || log "  ✗ Push failed (results still saved locally)"
 fi
 
 BUNDLE="${WORKDIR:-/workspace}/faceflash_ms1m_results_${RUN_TS}.tar.gz"
