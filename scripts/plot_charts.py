@@ -154,7 +154,14 @@ def chart_pareto():
 
 # ─── 3. Recall vs candidates, per bit-width, with CI bands ───────────────────
 def chart_recall_candidates():
-    d = json.load(open(RES / "bench_nbits_grid_1m.json"))
+    # Prefer the fresh MS1MV2 grid; fall back to the older VGGFace2 1M run.
+    fresh = RES / "bench_nbits_grid.json"
+    src = fresh if fresh.exists() else RES / "bench_nbits_grid_1m.json"
+    d = json.load(open(src))
+    n_db = d.get("n_database") or d.get("database")
+    scale_lbl = (f"{n_db/1e6:.0f}M" if n_db and n_db >= 1e6
+                 else f"{n_db/1e3:.0f}K" if n_db else "1M")
+    dataset = "MS1MV2" if "ms1m" in str(src).lower() or fresh.exists() else "VGGFace2"
     fig, ax = plt.subplots(figsize=(8, 5))
     for i, b in enumerate(d["grid"]):
         x = [c["n_cand"] for c in b["candidates"]]
@@ -169,7 +176,7 @@ def chart_recall_candidates():
     ax.set_xlabel("Rerank candidates")
     ax.set_ylabel("Recall@1 (%)")
     titled(ax, "More bits or more candidates both buy recall",
-           f"1M faces (VGGFace2) · bands = 95% CI over {d['n_queries']} queries")
+           f"{scale_lbl} faces ({dataset}) · bands = 95% CI over {d['n_queries']} queries")
     ax.legend(title="code length", frameon=False, loc="lower right")
     save(fig, "chart_recall_vs_candidates")
 

@@ -242,7 +242,7 @@ log ""
 # Full scan vs clustered recall@1 + latency, sweeping n_probe.
 # ─────────────────────────────────────────────────────────────────────────
 log "  Running coarse-clustering benchmark (full scan vs IVF, real MS1MV2)..."
-DATA_TAG=ms1m python benchmarks/bench_clustering.py --scales 100K,500K \
+DATA_TAG=ms1m python benchmarks/bench_clustering.py --scales 100K,500K,1M \
     --queries 1000 2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
@@ -253,7 +253,18 @@ log ""
 # Synthetic codes (no embeddings needed) → writes results/bench_simd.json.
 # ─────────────────────────────────────────────────────────────────────────
 log "  Running SIMD Hamming benchmark (AVX2/NEON raw scan speed)..."
-python benchmarks/bench_simd.py --scales 100K,500K 2>&1 | tee -a "$LOG_FILE" || true
+python benchmarks/bench_simd.py --scales 100K,500K,1M 2>&1 | tee -a "$LOG_FILE" || true
+
+log ""
+
+# ─────────────────────────────────────────────────────────────────────────
+# Step 4e: n_bits × candidates grid (recall vs candidates, 95% bootstrap CI).
+# Characterises the memory↔recall trade on real MS1MV2 → bench_nbits_grid.json
+# (feeds the "recall vs candidates" chart). Uses the full embedding set.
+# ─────────────────────────────────────────────────────────────────────────
+log "  Running n_bits × candidates grid (recall/CI on real MS1MV2)..."
+DATA_TAG=ms1m python benchmarks/bench_nbits_grid.py --queries 1000 \
+    2>&1 | tee -a "$LOG_FILE" || true
 
 log ""
 log "  ✓ MS1MV2 benchmarks complete"
