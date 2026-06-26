@@ -302,7 +302,7 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (1:N identification; FORCE_EXTRACT=1 f
 - [x] High-level API (register, search, verify)
 - [x] Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K–500K
 - [x] 1:N identification on 45,832 distinct identities (MS1MV2)
-- [x] **5-point alignment** (SCRFD/RetinaFace) — raw photos hit 99.85% LFW (+1.30 pts)
+- [x] **5-point alignment** (SCRFD/RetinaFace) — raw photos hit 99.85% LFW (+1.28 pts)
 
 **v0.2.0** — production quality
 - [x] **RetinaFace alignment** — 5-point face alignment so raw photos match benchmark accuracy
