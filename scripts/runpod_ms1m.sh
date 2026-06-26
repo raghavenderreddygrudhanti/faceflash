@@ -181,8 +181,12 @@ else
     # truth; labels by folder position so any folder naming works).
     # ─────────────────────────────────────────────────────────────────────
     log ""
-    log "  Extracting ArcFace embeddings — ALL ~85K identities (up to 12 imgs each ≈ 1M)..."
-    python scripts/extract_ms1m.py --ms1m-dir data/ms1m --max-per-identity 12 2>&1 | tee -a "$LOG_FILE"
+    # 15 imgs/identity over ~85K identities ≈ 1.1-1.2M embeddings — comfortably
+    # above 1M so the 500K/1M ANN/clustering scales are GENUINELY DISTINCT
+    # (real subsets, not tiled duplicates). Override with MAX_PER_IDENTITY.
+    log "  Extracting ArcFace embeddings — ALL ~85K identities (up to ${MAX_PER_IDENTITY:-15} imgs each ≈ 1.1M+)..."
+    python scripts/extract_ms1m.py --ms1m-dir data/ms1m \
+        --max-per-identity "${MAX_PER_IDENTITY:-15}" 2>&1 | tee -a "$LOG_FILE"
 
     if [ ! -f "$MS1M_OUT" ]; then
         log "  ✗ MS1MV2 extraction failed!"
