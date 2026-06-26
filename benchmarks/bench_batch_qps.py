@@ -208,7 +208,8 @@ def main():
         "n_candidates": args.n_candidates,
         "batched_correct_vs_truth": True,
         "note": ("real MS1MV2 codes; scan-only throughput (rerank excluded, "
-                 "identical on all paths); bandwidth win appears once DB > LLC"),
+                 "identical on all paths); bandwidth win appears once DB > LLC; "
+                 "scales beyond available data are tiled (real code distribution preserved)"),
         "scales": {},
     }
 
@@ -218,13 +219,29 @@ def main():
         n = SCALE_MAP.get(tag)
         if n is None:
             continue
+
+        # If the requested scale exceeds the real data, TILE the real codes to
+        # reach the target. This preserves the binary code distribution of real
+        # ArcFace embeddings (not random bits) while allowing throughput
+        # measurement at larger scales. For a scan-throughput benchmark the
+        # distribution of Hamming distances is what matters — tiling keeps it
+        # realistic. We flag "tiled" in the output so it's transparent.
         if n > len(db_codes):
-            print(f"  WARNING: scale {tag} ({n:,}) exceeds available "
-                  f"({len(db_codes):,}) — skipping")
-            continue
-        n_ids = len(set(str(labels[i]) for i in range(min(n, len(labels)))))
-        out["scales"][tag] = run_scale(
-            db_codes, q_codes, n, tag, n_ids, args.n_candidates)
+            reps_needed = int(np.ceil(n / len(db_codes)))
+            tiled = np.tile(db_codes, (reps_needed, 1))[:n]
+            tiled = np.ascontiguousarray(tiled)
+            tiled_flag = True
+            n_ids = n_ids_total  # can't meaningfully count unique in tiled
+            print(f"  NOTE: scale {tag} ({n:,}) > available ({len(db_codes):,}) "
+                  f"— tiling real codes {reps_needed}x (distribution preserved)")
+        else:
+            tiled = db_codes[:n]
+            tiled_flag = False
+            n_ids = len(set(str(labels[i]) for i in range(min(n, len(labels)))))
+
+        result = run_scale(tiled, q_codes, n, tag, n_ids, args.n_candidates)
+        result["tiled"] = tiled_flag
+        out["scales"][tag] = result
         ran_any = True
 
     if not ran_any:
