@@ -156,10 +156,53 @@ def chart_rank1():
     save(fig, "chart_rank1_tie")
 
 
+# ─── 5. Clustering recall/speed tradeoff (real MS1MV2) ───────────────────────
+def chart_clustering():
+    d = json.load(open(RES / "bench_clustering.json"))
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for i, (scale, s) in enumerate(d["scales"].items()):
+        x = [c["n_probe"] for c in s["clustered"]]
+        y = [c["recall_at_1"] * 100 for c in s["clustered"]]
+        col = PALETTE[i % len(PALETTE)]
+        ax.plot(x, y, "-o", color=col, linewidth=2, markersize=5, label=scale)
+        for c in s["clustered"]:
+            ax.annotate(f"{c['speedup_vs_full']:.0f}×",
+                        (c["n_probe"], c["recall_at_1"] * 100),
+                        textcoords="offset points", xytext=(0, 7),
+                        ha="center", fontsize=8, color=col)
+    ax.axhline(99, ls="--", color=DARK, alpha=0.5, lw=1)
+    ax.set_xlabel("n_probe (buckets scanned)")
+    ax.set_ylabel("Recall@1 (%)")
+    ax.set_title("Clustering trades recall for speed (real MS1MV2)\nlabels = speedup vs full scan",
+                 fontweight="bold", loc="left")
+    ax.legend(title="database", frameon=False)
+    save(fig, "chart_clustering_tradeoff")
+
+
+# ─── 6. SIMD scan speed ──────────────────────────────────────────────────────
+def chart_simd():
+    d = json.load(open(RES / "bench_simd.json"))
+    scales = list(d["scales"].keys())
+    single = [d["scales"][s]["single_threaded"]["mean_ms"] for s in scales]
+    fig, ax = plt.subplots(figsize=(7, 4))
+    bars = ax.bar(scales, single, color=ACCENT, width=0.5)
+    for bar, v in zip(bars, single):
+        ax.text(bar.get_x() + bar.get_width() / 2, v, f"{v:.2f} ms",
+                ha="center", va="bottom", fontsize=11, fontweight="bold")
+    ax.set_ylabel("Hamming scan latency (ms) — lower is better")
+    ax.set_title(f"Raw binary-scan speed ({d['arch']}, single thread)\n"
+                 "AVX2 on x86 · NEON on ARM",
+                 fontweight="bold", loc="left")
+    save(fig, "chart_simd_speed")
+
+
 if __name__ == "__main__":
     print("Generating charts from MS1MV2 result JSONs...")
-    chart_memory_bar()
-    chart_pareto()
-    chart_recall_candidates()
-    chart_rank1()
+    # Each chart is independent — a missing/changed JSON shouldn't kill the rest.
+    for fn in (chart_memory_bar, chart_pareto, chart_recall_candidates,
+               chart_rank1, chart_clustering, chart_simd):
+        try:
+            fn()
+        except Exception as e:
+            print(f"  ✗ {fn.__name__} skipped: {e}")
     print(f"Done → {OUT.relative_to(ROOT)}/")

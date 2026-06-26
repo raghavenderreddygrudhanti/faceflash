@@ -260,15 +260,25 @@ log "  ✓ MS1MV2 benchmarks complete"
 log ""
 
 # ─────────────────────────────────────────────────────────────────────────
+# Step 4e: Regenerate README charts from the fresh result JSONs.
+# (Resilient — a missing JSON skips just that chart, not the whole run.)
+# ─────────────────────────────────────────────────────────────────────────
+log "  Regenerating charts from fresh results..."
+pip install -q matplotlib 2>/dev/null
+python scripts/plot_charts.py 2>&1 | tee -a "$LOG_FILE" || true
+
+log ""
+
+# ─────────────────────────────────────────────────────────────────────────
 # Step 5: Commit + push (optional) + print results folder
 # ─────────────────────────────────────────────────────────────────────────
-log "  Committing MS1MV2 results..."
+log "  Committing MS1MV2 results + charts..."
 git config user.email "raghavenderreddy1212@gmail.com"
 git config user.name "Raghavender Grudhanti"
-git add results/ 2>/dev/null || true
+git add results/ docs/figures/ 2>/dev/null || true
 
 if ! git diff --cached --quiet 2>/dev/null; then
-    git commit -q -m "bench: MS1MV2 results — ANN comparison + 1:N identification + clustering (${RUN_TS})" || true
+    git commit -q -m "bench: MS1MV2 results + charts — ANN + 1:N + clustering + SIMD (${RUN_TS})" || true
     if [ -n "$GITHUB_TOKEN" ]; then
         git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REMOTE_SLUG}.git"
     fi
@@ -276,7 +286,7 @@ if ! git diff --cached --quiet 2>/dev/null; then
 fi
 
 BUNDLE="${WORKDIR:-/workspace}/faceflash_ms1m_results_${RUN_TS}.tar.gz"
-tar czf "$BUNDLE" results 2>/dev/null || true
+tar czf "$BUNDLE" results docs/figures 2>/dev/null || true
 
 log ""
 log "═══════════════════════════════════════════════════════════════"
@@ -289,5 +299,6 @@ echo "       results/bench_identification_ms1m.json   (1:N rank-1, 85K gallery)"
 echo "       results/bench_alignment.json             (Haar vs RetinaFace, LFW)"
 echo "       results/bench_clustering.json            (full scan vs IVF clustering)"
 echo "       results/bench_simd.json                  (AVX2/NEON raw scan speed)"
+echo "       docs/figures/*.png                       (6 regenerated charts)"
 echo "   ➜ BUNDLE (download this): ${BUNDLE}"
 echo "═══════════════════════════════════════════════════════════════"
