@@ -354,6 +354,28 @@ def bench_faceflash(database, queries, gt, configs=None):
         r["float_vectors_mb"] = round(database.nbytes / 1024 / 1024, 2)
         results.append(r)
 
+    # Multi-core variant of the headline config (512b/100c). Labeled explicitly
+    # as parallel — it spends CPU cores to cut single-query latency, unlike the
+    # single-threaded rows above and the single-threaded competitor rows.
+    if HAS_RUST and 512 in quantizers and hasattr(faceflash_core, "hamming_topk_parallel"):
+        pca, db_codes = quantizers[512]
+        q_codes = q_codes_cache[512]
+        n_cand = min(100, len(database) - 1)
+
+        def search_fn_par(q, i, _nc=n_cand, _qc=q_codes, _dbc=db_codes, _db=database):
+            topk = faceflash_core.hamming_topk_parallel(_qc[i], _dbc, _nc)
+            cand = np.asarray(topk).astype(np.intp)
+            best = cand[np.argmax(_db[cand] @ q)]
+            return int(best)
+
+        r = benchmark_method("FaceFlash (512b/100c, parallel)", search_fn_par, queries, gt)
+        r["memory_mb"] = round(db_codes.nbytes / 1024 / 1024, 2)
+        r["memory_note"] = "binary index only; multi-core Hamming scan"
+        r["index_type"] = "binary_hash"
+        r["params"] = {"n_bits": 512, "n_candidates": 100, "parallel": True}
+        r["float_vectors_mb"] = round(database.nbytes / 1024 / 1024, 2)
+        results.append(r)
+
     return results
 
 
