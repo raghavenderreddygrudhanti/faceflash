@@ -146,10 +146,10 @@ The built-in 5-point alignment vs the basic Haar center-crop, both through the s
 
 | Alignment | LFW Accuracy | TAR@FAR=1e-3 |
 |-----------|--------------|--------------|
-| Haar center-crop | 98.55% ± 0.49 | 96.93% |
+| Haar center-crop | 98.57% ± 0.48 | 96.97% |
 | **5-point (SCRFD/RetinaFace)** | **99.85% ± 0.17** | **99.73%** |
 
-Proper alignment lifts accuracy **+1.30 points** — this is what lets raw photos approach the pre-aligned benchmark numbers.
+Proper alignment lifts accuracy **+1.28 points** — this is what lets raw photos approach the pre-aligned benchmark numbers.
 
 ### Scaling to Millions
 
