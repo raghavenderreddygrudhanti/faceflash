@@ -28,10 +28,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from faceflash.pca_quantize import PCABinaryQuantizer, backend_info
 
 try:
-    import faceflash_core
+    from faceflash import _core as faceflash_core  # packaged build
     HAS_RUST = True
 except ImportError:
-    HAS_RUST = False
+    try:
+        import faceflash_core  # legacy / bare `maturin develop`
+        HAS_RUST = True
+    except ImportError:
+        HAS_RUST = False
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 RESULTS_DIR = Path(__file__).parent.parent / "results"

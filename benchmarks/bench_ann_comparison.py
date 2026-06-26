@@ -140,15 +140,26 @@ def compute_ground_truth(database, queries):
 # Benchmark methods
 # ─────────────────────────────────────────────────────────────────────────────
 
-def benchmark_method(name, search_fn, queries, gt, warmup=10):
+def benchmark_method(name, search_fn, queries, gt, warmup=10, database=None):
     """Run timed benchmark for a search function.
-    
+
     search_fn(query, index) -> int (predicted NN index)
+
+    Recall is TIE-AWARE when `database` is given: a prediction counts as correct
+    if its distance equals the true nearest distance — not only if the index
+    matches gt. This is the correct definition when distance ties exist (e.g.
+    tiled scales create exact duplicates), and avoids unfairly penalizing
+    methods that return a different-but-equidistant vector than argmax picked.
     """
     n_q = len(queries)
     # Warmup
     for i in range(min(warmup, n_q)):
         search_fn(queries[i], i)
+
+    # True best similarity per query (for tie-aware scoring); outside timing.
+    gt_sims = None
+    if database is not None:
+        gt_sims = np.array([float(database[gt[i]] @ queries[i]) for i in range(n_q)])
 
     times = []
     correct = 0
@@ -158,6 +169,8 @@ def benchmark_method(name, search_fn, queries, gt, warmup=10):
         times.append((time.perf_counter() - t0) * 1000)
         if idx == gt[i]:
             correct += 1
+        elif gt_sims is not None and float(database[idx] @ queries[i]) >= gt_sims[i] - 1e-5:
+            correct += 1  # equidistant vector (e.g. a tiled duplicate) — valid NN
 
     times = np.array(times)
     return {
@@ -184,7 +197,7 @@ def bench_faiss_flat(database, queries, gt):
         _, I = index.search(q.reshape(1, -1), 1)
         return int(I[0, 0])
 
-    r = benchmark_method("FAISS-Flat (exact)", search_fn, queries, gt)
+    r = benchmark_method("FAISS-Flat (exact)", search_fn, queries, gt, database=database)
     r["memory_mb"] = round(database.nbytes / 1024 / 1024, 2)
     r["memory_note"] = "full float vectors"
     r["index_type"] = "brute_force"
@@ -207,7 +220,7 @@ def bench_faiss_ivf(database, queries, gt, nlist=256, nprobe=32):
         _, I = index.search(q.reshape(1, -1), 1)
         return int(I[0, 0])
 
-    r = benchmark_method(f"FAISS-IVF (nprobe={nprobe})", search_fn, queries, gt)
+    r = benchmark_method(f"FAISS-IVF (nprobe={nprobe})", search_fn, queries, gt, database=database)
     r["memory_mb"] = round(database.nbytes / 1024 / 1024 * 1.05, 2)  # vectors + centroids
     r["memory_note"] = "vectors + centroids (estimated)"
     r["index_type"] = "ivf"
@@ -236,7 +249,7 @@ def bench_hnswlib(database, queries, gt, ef_values=(32, 64, 128)):
             labels_out, _ = _idx.knn_query(q.reshape(1, -1), k=1)
             return int(labels_out[0][0])
 
-        r = benchmark_method(f"HNSWLIB (ef={ef})", search_fn, queries, gt)
+        r = benchmark_method(f"HNSWLIB (ef={ef})", search_fn, queries, gt, database=database)
         r["memory_mb"] = mem_mb
         r["memory_note"] = "vectors + HNSW graph (estimated ~1.5x)"
         r["index_type"] = "hnsw"
@@ -260,7 +273,7 @@ def bench_usearch(database, queries, gt):
         matches = index.search(q, 1)
         return int(matches.keys[0])
 
-    r = benchmark_method("USearch (HNSW)", search_fn, queries, gt)
+    r = benchmark_method("USearch (HNSW)", search_fn, queries, gt, database=database)
     r["memory_mb"] = mem_mb
     r["memory_note"] = "vectors + graph (estimated ~1.3x)"
     r["index_type"] = "hnsw"
@@ -288,7 +301,7 @@ def bench_scann(database, queries, gt, n_leaves=None, reorder_k=100):
             idx, _ = searcher.search(q, final_num_neighbors=1)
             return int(idx[0])
 
-        r = benchmark_method(f"ScaNN (leaves={n_leaves})", search_fn, queries, gt)
+        r = benchmark_method(f"ScaNN (leaves={n_leaves})", search_fn, queries, gt, database=database)
         # ScaNN uses quantized codes + some overhead
         r["memory_mb"] = round(n_db * dim / 4 / 1024 / 1024, 2)  # ~4x compression
         r["memory_note"] = "quantized vectors (estimated ~0.25x raw)"
@@ -346,7 +359,7 @@ def bench_faceflash(database, queries, gt, configs=None):
                 best = cand[np.argmax(_db[cand] @ q)]
                 return int(best)
 
-        r = benchmark_method(f"FaceFlash ({n_bits}b/{n_cands}c)", search_fn, queries, gt)
+        r = benchmark_method(f"FaceFlash ({n_bits}b/{n_cands}c)", search_fn, queries, gt, database=database)
         r["memory_mb"] = round(db_codes.nbytes / 1024 / 1024, 2)
         r["memory_note"] = "binary index only (float vectors mmap'd from disk)"
         r["index_type"] = "binary_hash"
@@ -368,7 +381,7 @@ def bench_faceflash(database, queries, gt, configs=None):
             best = cand[np.argmax(_db[cand] @ q)]
             return int(best)
 
-        r = benchmark_method("FaceFlash (512b/100c, parallel)", search_fn_par, queries, gt)
+        r = benchmark_method("FaceFlash (512b/100c, parallel)", search_fn_par, queries, gt, database=database)
         r["memory_mb"] = round(db_codes.nbytes / 1024 / 1024, 2)
         r["memory_note"] = "binary index only; multi-core Hamming scan"
         r["index_type"] = "binary_hash"
@@ -398,7 +411,12 @@ def bench_faceflash(database, queries, gt, configs=None):
             preds[i] = ci[np.argmax(database[ci] @ queries[i])]
         total_s = time.perf_counter() - t0
 
-        correct = int(np.sum(preds == np.asarray(gt)))
+        # Tie-aware recall (matches benchmark_method): a prediction is correct
+        # if its distance equals the true nearest distance — handles tiled
+        # duplicates so the batched row isn't unfairly penalized at 500K/1M.
+        gt_sims = np.array([float(database[gt[i]] @ queries[i]) for i in range(len(queries))])
+        pred_sims = np.array([float(database[preds[i]] @ queries[i]) for i in range(len(queries))])
+        correct = int(np.sum(pred_sims >= gt_sims - 1e-5))
         results.append({
             "method": "FaceFlash (512b/100c, batched)",
             "recall_at_1": correct / len(queries),
