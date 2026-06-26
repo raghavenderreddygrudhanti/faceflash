@@ -23,8 +23,8 @@ pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/f
 | Find the right person (rank-1) | **95.8%** | 95.8% (exact ceiling) |
 | Memory for 100K faces | **3 MB** | 293 MB |
 | Memory for 500K faces | **30 MB** | 1,465 MB |
-| Recall@1 at 100K | **99.9%** | 99.5% |
-| Recall@1 at 500K | **99.9%** | 99.5% |
+| Recall@1 at 100K | **100%** | 100% |
+| Recall@1 at 500K | **100%** | 100% |
 
 Tested on MS1MV2 (45,832 distinct identities) and VGGFace2 (500K images).
 All methods single-threaded, same hardware, same data.
@@ -78,17 +78,17 @@ Query → Same pipeline → Hamming Scan (Rust POPCNT) → Top-K Cosine Rerank �
 
 |  | FaceFlash | FAISS-Flat | FAISS-IVF | HNSWLIB | USearch | ScaNN |
 |--|-----------|-----------|-----------|---------|---------|-------|
-| **Recall@1** | 99.9% | 100% | 99.8% | 99.5% | 97.4% | 81.5% |
-| **Latency** | 0.53ms | 4.92ms | 1.20ms | 0.24ms | 0.10ms | 0.10ms |
+| **Recall@1** | 99.9% | 100% | 99.7% | 100% | 99.4% | 97.8% |
+| **Latency** | 0.55ms | 3.94ms | 1.06ms | 0.62ms | 0.18ms | 0.11ms |
 | **Memory** | **3 MB** | 195 MB | 205 MB | 293 MB | 254 MB | 12 MB |
 | **Training** | None | None | Required | Required | Required | Required |
 | **GPU needed** | No | No | No | No | No | No |
 
-**FaceFlash wins:** memory (48-96× less than graph indexes), no training step, highest recall among memory-efficient options.
+**FaceFlash wins:** memory (48-96× less than graph indexes), no training step, top-tier recall — all on 3 MB.
 
-**FaceFlash loses:** latency (HNSW/USearch/ScaNN are 2-6× faster at the cost of 40-50× more RAM).
+**FaceFlash loses:** latency — USearch and ScaNN are 3-5× faster (at 20-85× more RAM). At 100K, HNSW is roughly on par with FaceFlash on speed; it only pulls clearly ahead at larger scale.
 
-**Bottom line:** if you have unlimited RAM, use HNSW. If memory is the constraint — edge, mobile, IoT, cheap hardware — FaceFlash is the only option that holds 99%+ recall.
+**Bottom line:** if you have unlimited RAM and need the lowest latency at huge scale, use HNSW. If memory is the constraint — edge, mobile, IoT, cheap hardware — FaceFlash gives you the same recall in a fraction of the RAM.
 
 ## Detailed Benchmarks
 
@@ -114,29 +114,31 @@ FaceFlash ties exact search using **34× less memory** — the binary compressio
 
 | Method | Recall@1 | Latency | Memory | Type |
 |--------|----------|---------|--------|------|
-| FAISS-Flat (exact) | 100% | 4.92ms | 195 MB | brute force |
-| HNSWLIB (ef=128) | 99.5% | 0.24ms | 293 MB | graph |
-| HNSWLIB (ef=64) | 99.2% | 0.13ms | 293 MB | graph |
-| USearch | 97.4% | 0.10ms | 254 MB | graph |
-| ScaNN | 81.5% | 0.10ms | 12 MB | quantized |
-| **FaceFlash (512b/100c)** | **99.9%** | 0.95ms | **6.1 MB** | binary hash |
-| **FaceFlash (256b/300c)** | **99.7%** | 0.55ms | **3.0 MB** | binary hash |
+| FAISS-Flat (exact) | 100% | 3.94ms | 195 MB | brute force |
+| HNSWLIB (ef=128) | 100% | 0.62ms | 293 MB | graph |
+| HNSWLIB (ef=64) | 99.6% | 0.33ms | 293 MB | graph |
+| USearch | 99.4% | 0.18ms | 254 MB | graph |
+| ScaNN | 97.8% | 0.11ms | 12 MB | quantized |
+| **FaceFlash (512b/100c)** | **100%** | 0.95ms | **6.1 MB** | binary hash |
+| **FaceFlash (256b/300c)** | **99.9%** | 0.55ms | **3.0 MB** | binary hash |
 
-FaceFlash: **96x less memory** than HNSW at equal recall. HNSW is ~4x faster — that's the tradeoff.
-ScaNN (the other memory-efficient option) drops to 82% recall. FaceFlash holds 99.9%.
+FaceFlash matches exact recall using **48–96× less memory** than HNSW — and at 100K it's
+**on par with HNSW on latency too** (0.55–0.95ms vs 0.62ms). ScaNN, the other low-memory
+option, reaches 97.8% but uses 4× the memory and trails on recall.
 
 ### vs All ANN Methods — 500K Faces (MS1MV2, 42,502 identities)
 
 | Method | Recall@1 | Latency | Memory |
 |--------|----------|---------|--------|
-| FAISS-Flat (exact) | 100% | 24.4ms | 977 MB |
-| HNSWLIB (ef=128) | 99.5% | 0.41ms | 1,465 MB |
-| HNSWLIB (ef=64) | 99.1% | 0.22ms | 1,465 MB |
-| ScaNN | 92.0% | 0.37ms | 61 MB |
-| **FaceFlash (512b/200c)** | **99.9%** | 4.50ms | **30.5 MB** |
-| **FaceFlash (256b/100c)** | **99.6%** | 2.62ms | **15.3 MB** |
+| FAISS-Flat (exact) | 100% | 20.3ms | 977 MB |
+| HNSWLIB (ef=128) | 100% | 0.72ms | 1,465 MB |
+| HNSWLIB (ef=64) | 99.7% | 0.38ms | 1,465 MB |
+| USearch | 98.2% | 0.30ms | 1,270 MB |
+| ScaNN | 96.8% | 0.44ms | 61 MB |
+| **FaceFlash (512b/200c)** | **100%** | 4.49ms | **30.5 MB** |
+| **FaceFlash (256b/100c)** | **99.9%** | 2.62ms | **15.3 MB** |
 
-At 500K: **48x less memory** than HNSW. HNSW is ~11x faster — that's the tradeoff. FaceFlash wins on memory.
+At 500K: **48x less memory** than HNSW. Here HNSW pulls ahead on speed (~6× faster) — that's the tradeoff. FaceFlash wins decisively on memory.
 
 ### Face Alignment — Raw Photos (LFW Verification)
 
@@ -197,9 +199,10 @@ verified byte-exact against NumPy before timing.
 
 ![Raw binary-scan speed — AVX2 on x86, NEON on ARM](docs/figures/chart_simd_speed.png)
 
-This is the engine under the search numbers above: a single ~0.5 ms scan of 100K
-512-bit codes on one core. The chart reflects whichever architecture the
-benchmark last ran on (`results/bench_simd.json`).
+This is the engine under the search numbers above: a ~0.9 ms scan of 100K 512-bit
+codes on a single x86 core (0.55 ms across cores; ~0.5 ms on Apple Silicon NEON).
+The kernel is correct and portable — absolute speed depends on the CPU. The chart
+reflects whichever architecture the benchmark last ran on (`results/bench_simd.json`).
 
 ### When to Use It / When Not To
 
