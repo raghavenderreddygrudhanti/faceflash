@@ -159,6 +159,8 @@ into ~√N buckets, and a query only scans the `n_probe` closest buckets.
 ff.index.build_clusters(n_probe=16)   # after registering faces
 ```
 
+![Clustering recall/speed tradeoff on real MS1MV2 — labels show speedup vs full scan](docs/figures/chart_clustering_tradeoff.png)
+
 Measured on **real MS1MV2 faces** (Rust backend, single thread). `n_probe` is the
 recall/speed knob — clustering trades recall for speed, so it's for when you can
 tolerate approximate results, not when you need exact recall:
@@ -185,6 +187,19 @@ stays much flatter (32× faster at 500K, n_probe=4). The honest tradeoff: holdin
 ≥99% recall costs most of the speedup (~2× at 100K), while a tolerance for ~95%
 recall buys 6–11×. Probe every bucket and you reproduce the exact full-scan result;
 leave clustering off (the default) and search is unchanged.
+
+### Raw Scan Speed (SIMD)
+
+The Hamming scan uses hand-written SIMD kernels with runtime dispatch — **AVX2**
+on x86_64 (32 bytes/iteration via `vpshufb` popcount), **NEON** on ARM
+(`vcntq_u8`), and a scalar `u64` POPCNT fallback elsewhere. Every kernel is
+verified byte-exact against NumPy before timing.
+
+![Raw binary-scan speed — AVX2 on x86, NEON on ARM](docs/figures/chart_simd_speed.png)
+
+This is the engine under the search numbers above: a single ~0.5 ms scan of 100K
+512-bit codes on one core. The chart reflects whichever architecture the
+benchmark last ran on (`results/bench_simd.json`).
 
 ### When to Use It / When Not To
 
