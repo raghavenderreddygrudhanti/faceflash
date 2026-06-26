@@ -10,9 +10,12 @@ use rayon::prelude::*;
 // SIMD Hamming kernels — compile-time feature detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// AVX2 Hamming distance: processes 32 bytes (256 bits) per iteration.
-/// ~3-4x faster than scalar u64 POPCNT on x86_64.
+/// AVX2 Hamming distance via vpshufb nibble-lookup popcount.
+/// Kept for reference only — benchmarks showed this is SLOWER than scalar
+/// hardware POPCNT (`count_ones()`) on modern x86, so the dispatcher never
+/// calls it. `allow(dead_code)` silences the unused-fn warning on x86 builds.
 #[cfg(target_arch = "x86_64")]
+#[allow(dead_code)]
 #[target_feature(enable = "avx2,popcnt")]
 unsafe fn hamming_avx2(a: &[u8], b: &[u8]) -> u32 {
     use std::arch::x86_64::*;

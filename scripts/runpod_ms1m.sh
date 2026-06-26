@@ -257,6 +257,21 @@ python benchmarks/bench_simd.py --scales 100K,500K,1M 2>&1 | tee -a "$LOG_FILE" 
 log ""
 
 # ─────────────────────────────────────────────────────────────────────────
+# Step 4d-bis: Batch QPS — single-query vs cache-blocked batched throughput.
+# The batched scan tiles the DB into cache-sized blocks and reuses each block
+# across all queries in a chunk, so the DB streams from RAM ~once per thread
+# instead of once per query. This is where the x86 win shows (DB > LLC at
+# 500K-1M), unlike single-query parallel which is bandwidth-bound (~1.3x).
+# Self-validates correctness, reports per-query vs batched QPS + the
+# AVX-512 VPOPCNTDQ flag (the next compute-bound lever). → bench_batch_qps.json
+# ─────────────────────────────────────────────────────────────────────────
+log "  Running batch-QPS benchmark (per-query vs cache-blocked batched)..."
+python benchmarks/bench_batch_qps.py --scales 100K,500K,1M --queries 1000 \
+    2>&1 | tee -a "$LOG_FILE" || true
+
+log ""
+
+# ─────────────────────────────────────────────────────────────────────────
 # Step 4e: n_bits × candidates grid (recall vs candidates, 95% bootstrap CI).
 # Characterises the memory↔recall trade on real MS1MV2 → bench_nbits_grid.json
 # (feeds the "recall vs candidates" chart). Uses the full embedding set.
