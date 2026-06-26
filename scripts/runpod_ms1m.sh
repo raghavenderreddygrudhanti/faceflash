@@ -15,10 +15,12 @@
 #   export KAGGLE_USERNAME=<your-kaggle-username>   # only if embeddings NOT on HF
 #   export KAGGLE_KEY=<your-kaggle-key>             # (HF pull skips Kaggle + extraction)
 #
-# FULL 85K RUN (GPU pod): force a fresh extraction of ALL ~85K identities,
-# replacing the 13.7K HF subset. Needs a GPU + Kaggle keys + HF write token:
+# FULL 85K RUN (GPU pod): force a fresh extraction of ALL ~85K identities.
+# Images come from YOUR HuggingFace first (HF_IMG_REPO), Kaggle as fallback:
 #   export FORCE_EXTRACT=1
-#   export KAGGLE_USERNAME=... KAGGLE_KEY=... HF_TOKEN=hf_xxx(write)
+#   export HF_IMG_REPO=<user>/<image-dataset>    # preferred — no 16GB Kaggle dl
+#   export HF_TOKEN=hf_xxx(write)                 # to upload the new embeddings
+#   # (or, fallback) export KAGGLE_USERNAME=... KAGGLE_KEY=...
 #   (run takes ~60-90 min; uploads new 85K embeddings to HF for future runs)
 #
 # ONE command on a fresh RunPod terminal (HF public → no HF_TOKEN needed):
@@ -129,52 +131,49 @@ if [ "${FORCE_EXTRACT:-0}" != "1" ] && [ -f "$MS1M_OUT" ]; then
 elif [ "${FORCE_EXTRACT:-0}" != "1" ] && { python scripts/hf_sync.py download 2>&1 | tee -a "$LOG_FILE"; [ -f "$MS1M_OUT" ]; }; then
     log "  ✓ Pulled embeddings from HuggingFace — skipped Kaggle download + GPU extraction"
 else
-    log "  Extracting embeddings from MS1MV2 (Kaggle, full 85K)..."
-    if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
-        log "  ✗ KAGGLE_USERNAME and KAGGLE_KEY must be set!"
-        log "    export KAGGLE_USERNAME=<your-kaggle-username>"
-        log "    export KAGGLE_KEY=<your-kaggle-key>"
-        exit 1
+    log "  Need raw MS1MV2 images to extract embeddings (full 85K)..."
+    mkdir -p "$MS1M_DIR"
+    FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
+
+    # ── Image source 1 (PREFERRED): YOUR HuggingFace dataset ──────────────
+    # Pull images from HF_IMG_REPO (or HF_EMB_REPO) and lay them out as
+    # data/ms1m/ms1m-arcface/<id>/*.jpg — avoids the 16GB Kaggle download.
+    if [ "$FOLDER_COUNT" -lt 70000 ] && [ -n "${HF_IMG_REPO:-${HF_EMB_REPO:-}}" ]; then
+        log "  Pulling MS1MV2 images from HuggingFace (${HF_IMG_REPO:-$HF_EMB_REPO})..."
+        pip install -q huggingface-hub 2>/dev/null
+        python scripts/hf_images.py 2>&1 | tee -a "$LOG_FILE" || log "  (HF image pull failed — falling back to Kaggle)"
+        FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
     fi
 
-    # Download zip if not present
-    if [ ! -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
-        FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
-        if [ "$FOLDER_COUNT" -ge 70000 ]; then
-            log "  ✓ MS1MV2 already fully extracted ($FOLDER_COUNT folders)"
-        else
-            log "  Downloading MS1MV2 from Kaggle (~16GB, takes 5-10 min)..."
-            mkdir -p "$MS1M_DIR"
+    # ── Image source 2 (FALLBACK): Kaggle ─────────────────────────────────
+    if [ "$FOLDER_COUNT" -lt 70000 ]; then
+        if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
+            log "  ✗ Images not available from HuggingFace and Kaggle keys not set."
+            log "    Either: export HF_IMG_REPO=<user>/<image-dataset>   (preferred)"
+            log "    Or:     export KAGGLE_USERNAME=<user> KAGGLE_KEY=<key>"
+            exit 1
+        fi
+        if [ ! -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
+            log "  Downloading MS1MV2 from Kaggle (~16GB, 5-10 min)..."
             kaggle datasets download -d yakhyokhuja/ms1m-arcface-dataset -p "$MS1M_DIR" 2>&1 | tail -5
-            if [ ! -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
-                log "  ✗ Kaggle download failed!"
-                exit 1
-            fi
+            [ -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ] || { log "  ✗ Kaggle download failed!"; exit 1; }
             log "  ✓ Download complete"
         fi
-    else
-        log "  ✓ MS1MV2 zip already present"
+        FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
+        if [ "$FOLDER_COUNT" -lt 70000 ] && [ -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
+            log "  Extracting MS1MV2 zip (~85K folders, progress every 30s)..."
+            unzip -o "$MS1M_DIR/ms1m-arcface-dataset.zip" -d "$MS1M_DIR/" > /tmp/unzip_ms1m.log 2>&1 &
+            UNZIP_PID=$!
+            while kill -0 $UNZIP_PID 2>/dev/null; do
+                log "    extracting... $(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l) / ~85,742 folders"
+                sleep 30
+            done
+            wait $UNZIP_PID
+            rm -f "$MS1M_DIR/ms1m-arcface-dataset.zip" 2>/dev/null
+        fi
     fi
-
-    # Extract zip if needed (check folder count)
-    FOLDER_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
-    if [ "$FOLDER_COUNT" -lt 70000 ] && [ -f "$MS1M_DIR/ms1m-arcface-dataset.zip" ]; then
-        log "  Extracting MS1MV2 zip (~85K folders, progress every 30s)..."
-        log "  Currently: $FOLDER_COUNT folders"
-        unzip -o "$MS1M_DIR/ms1m-arcface-dataset.zip" -d "$MS1M_DIR/" > /tmp/unzip_ms1m.log 2>&1 &
-        UNZIP_PID=$!
-        while kill -0 $UNZIP_PID 2>/dev/null; do
-            CURRENT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
-            log "    extracting... $CURRENT / ~85,742 folders"
-            sleep 30
-        done
-        wait $UNZIP_PID
-        FINAL_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
-        log "  ✓ Extraction done: $FINAL_COUNT identity folders"
-        rm -f "$MS1M_DIR/ms1m-arcface-dataset.zip" 2>/dev/null
-    else
-        log "  ✓ MS1MV2 extraction complete: $FOLDER_COUNT identity folders"
-    fi
+    FINAL_COUNT=$(ls "$MS1M_DIR/ms1m-arcface" 2>/dev/null | wc -l)
+    log "  ✓ Images ready: $FINAL_COUNT identity folders"
 
     # ─────────────────────────────────────────────────────────────────────
     # Step 2: Extract embeddings (scripts/extract_ms1m.py — single source of
