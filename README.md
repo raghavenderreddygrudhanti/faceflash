@@ -1,8 +1,14 @@
 # ⚡ FaceFlash
 
-**Face search at 100% recall in 6–61 MB of RAM — 48× less than HNSW, 42× less than USearch, 32× less than FAISS.**
+**A 1M face gallery takes 2.9 GB in HNSW. FaceFlash fits it in 61 MB — and searches it at 100% recall.**
 
-Search 100K faces in 0.4ms. Search 1M faces in 61 MB while HNSW needs 2.9 GB, USearch needs 2.5 GB, and FAISS needs 1.9 GB for the same recall. 4.8× faster batched throughput than HNSW. No GPU. No hyperparameter tuning. Just install and run.
+FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ binary quantization** — a learned hash that preserves identity information with zero recall loss and no separate training phase.
+
+- **100% recall, 48× less memory.** Same accuracy as exact brute-force at a fraction of the RAM. HNSW needs 2.9 GB at 1M faces; FaceFlash needs 61 MB.
+- **Faster than HNSW at 100K.** Single-query: 0.43ms vs 0.60ms. Batched: 4.8× more throughput. Both at 100% recall.
+- **AVX-512 VPOPCNTDQ + NEON.** Hand-written SIMD kernels process one 512-bit face code per instruction. Cache-blocked batching delivers 10–17× throughput at scale.
+- **Zero-config indexing.** Add faces, they're indexed — PCA fits automatically, no hyperparameter tuning, no rebuilds as the gallery grows.
+- **Pure local.** No managed service, no data leaving your machine. Pair with any ArcFace model for a fully air-gapped face search stack.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
