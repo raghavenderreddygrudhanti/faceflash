@@ -14,7 +14,7 @@ Usage:
     result = ff.search("query.jpg")
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Library best practice (PEP/logging guide): attach a NullHandler so FaceFlash
 # emits nothing unless the host application configures logging. Apps opt in via

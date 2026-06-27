@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "faceflash"
-version = "0.1.0"
+version = "0.1.1"
 description = "Face search engine: register photos, identify people from camera/video/images. 100% recall at 96x less memory than HNSW. No GPU needed."
 readme = "README.md"
 license = {text = "MIT"}
