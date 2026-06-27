@@ -13,12 +13,16 @@ Methods compared:
   6. FaceFlash (PCA+ITQ binary hash + cosine rerank)
 
 Metrics per method:
-  - Recall@1 (vs exact brute-force ground truth)
+  - Recall@1 (TIE-AWARE: a prediction is correct if its distance equals the
+    true nearest distance — handles exact duplicates from tiled scales)
   - Single-query latency (mean, median, P95, P99)
   - Memory usage (measured or estimated)
   - QPS (queries per second)
 
-All methods run SINGLE-THREADED for fair comparison.
+Two comparison categories, each measured the same way on both sides:
+  - Single-query rows: all SINGLE-THREADED (interactive latency).
+  - Batched rows (FaceFlash, HNSWLIB, USearch): all MULTI-CORE, whole query
+    set in one call (bulk/throughput) — so the QPS comparison is apples-to-apples.
 
 Usage:
     python benchmarks/bench_ann_comparison.py [--scales 100K,500K,1M]
@@ -140,15 +144,26 @@ def compute_ground_truth(database, queries):
 # Benchmark methods
 # ─────────────────────────────────────────────────────────────────────────────
 
-def benchmark_method(name, search_fn, queries, gt, warmup=10):
+def benchmark_method(name, search_fn, queries, gt, warmup=10, database=None):
     """Run timed benchmark for a search function.
-    
+
     search_fn(query, index) -> int (predicted NN index)
+
+    Recall is TIE-AWARE when `database` is given: a prediction counts as correct
+    if its distance equals the true nearest distance — not only if the index
+    matches gt. This is the correct definition when distance ties exist (e.g.
+    tiled scales create exact duplicates), and avoids unfairly penalizing
+    methods that return a different-but-equidistant vector than argmax picked.
     """
     n_q = len(queries)
     # Warmup
     for i in range(min(warmup, n_q)):
         search_fn(queries[i], i)
+
+    # True best similarity per query (for tie-aware scoring); outside timing.
+    gt_sims = None
+    if database is not None:
+        gt_sims = np.array([float(database[gt[i]] @ queries[i]) for i in range(n_q)])
 
     times = []
     correct = 0
@@ -158,6 +173,8 @@ def benchmark_method(name, search_fn, queries, gt, warmup=10):
         times.append((time.perf_counter() - t0) * 1000)
         if idx == gt[i]:
             correct += 1
+        elif gt_sims is not None and float(database[idx] @ queries[i]) >= gt_sims[i] - 1e-5:
+            correct += 1  # equidistant vector (e.g. a tiled duplicate) — valid NN
 
     times = np.array(times)
     return {
@@ -184,7 +201,7 @@ def bench_faiss_flat(database, queries, gt):
         _, I = index.search(q.reshape(1, -1), 1)
         return int(I[0, 0])
 
-    r = benchmark_method("FAISS-Flat (exact)", search_fn, queries, gt)
+    r = benchmark_method("FAISS-Flat (exact)", search_fn, queries, gt, database=database)
     r["memory_mb"] = round(database.nbytes / 1024 / 1024, 2)
     r["memory_note"] = "full float vectors"
     r["index_type"] = "brute_force"
@@ -207,7 +224,7 @@ def bench_faiss_ivf(database, queries, gt, nlist=256, nprobe=32):
         _, I = index.search(q.reshape(1, -1), 1)
         return int(I[0, 0])
 
-    r = benchmark_method(f"FAISS-IVF (nprobe={nprobe})", search_fn, queries, gt)
+    r = benchmark_method(f"FAISS-IVF (nprobe={nprobe})", search_fn, queries, gt, database=database)
     r["memory_mb"] = round(database.nbytes / 1024 / 1024 * 1.05, 2)  # vectors + centroids
     r["memory_note"] = "vectors + centroids (estimated)"
     r["index_type"] = "ivf"
@@ -236,7 +253,7 @@ def bench_hnswlib(database, queries, gt, ef_values=(32, 64, 128)):
             labels_out, _ = _idx.knn_query(q.reshape(1, -1), k=1)
             return int(labels_out[0][0])
 
-        r = benchmark_method(f"HNSWLIB (ef={ef})", search_fn, queries, gt)
+        r = benchmark_method(f"HNSWLIB (ef={ef})", search_fn, queries, gt, database=database)
         r["memory_mb"] = mem_mb
         r["memory_note"] = "vectors + HNSW graph (estimated ~1.5x)"
         r["index_type"] = "hnsw"
@@ -260,7 +277,7 @@ def bench_usearch(database, queries, gt):
         matches = index.search(q, 1)
         return int(matches.keys[0])
 
-    r = benchmark_method("USearch (HNSW)", search_fn, queries, gt)
+    r = benchmark_method("USearch (HNSW)", search_fn, queries, gt, database=database)
     r["memory_mb"] = mem_mb
     r["memory_note"] = "vectors + graph (estimated ~1.3x)"
     r["index_type"] = "hnsw"
@@ -288,7 +305,7 @@ def bench_scann(database, queries, gt, n_leaves=None, reorder_k=100):
             idx, _ = searcher.search(q, final_num_neighbors=1)
             return int(idx[0])
 
-        r = benchmark_method(f"ScaNN (leaves={n_leaves})", search_fn, queries, gt)
+        r = benchmark_method(f"ScaNN (leaves={n_leaves})", search_fn, queries, gt, database=database)
         # ScaNN uses quantized codes + some overhead
         r["memory_mb"] = round(n_db * dim / 4 / 1024 / 1024, 2)  # ~4x compression
         r["memory_note"] = "quantized vectors (estimated ~0.25x raw)"
@@ -346,7 +363,7 @@ def bench_faceflash(database, queries, gt, configs=None):
                 best = cand[np.argmax(_db[cand] @ q)]
                 return int(best)
 
-        r = benchmark_method(f"FaceFlash ({n_bits}b/{n_cands}c)", search_fn, queries, gt)
+        r = benchmark_method(f"FaceFlash ({n_bits}b/{n_cands}c)", search_fn, queries, gt, database=database)
         r["memory_mb"] = round(db_codes.nbytes / 1024 / 1024, 2)
         r["memory_note"] = "binary index only (float vectors mmap'd from disk)"
         r["index_type"] = "binary_hash"
@@ -354,7 +371,137 @@ def bench_faceflash(database, queries, gt, configs=None):
         r["float_vectors_mb"] = round(database.nbytes / 1024 / 1024, 2)
         results.append(r)
 
+    # Multi-core variant of the headline config (512b/100c). Labeled explicitly
+    # as parallel — it spends CPU cores to cut single-query latency, unlike the
+    # single-threaded rows above and the single-threaded competitor rows.
+    if HAS_RUST and 512 in quantizers and hasattr(faceflash_core, "hamming_topk_parallel"):
+        pca, db_codes = quantizers[512]
+        q_codes = q_codes_cache[512]
+        n_cand = min(100, len(database) - 1)
+
+        def search_fn_par(q, i, _nc=n_cand, _qc=q_codes, _dbc=db_codes, _db=database):
+            topk = faceflash_core.hamming_topk_parallel(_qc[i], _dbc, _nc)
+            cand = np.asarray(topk).astype(np.intp)
+            best = cand[np.argmax(_db[cand] @ q)]
+            return int(best)
+
+        r = benchmark_method("FaceFlash (512b/100c, parallel)", search_fn_par, queries, gt, database=database)
+        r["memory_mb"] = round(db_codes.nbytes / 1024 / 1024, 2)
+        r["memory_note"] = "binary index only; multi-core Hamming scan"
+        r["index_type"] = "binary_hash"
+        r["params"] = {"n_bits": 512, "n_candidates": 100, "parallel": True}
+        r["float_vectors_mb"] = round(database.nbytes / 1024 / 1024, 2)
+        results.append(r)
+
+    # Batched throughput: process ALL queries in one FFI call. This is the
+    # bulk/identification path — it amortizes the Python<->Rust crossing and
+    # parallelizes over queries. Reports QPS for the whole batch (and the
+    # equivalent per-query latency), not single-query interactive latency.
+    if HAS_RUST and 512 in quantizers and hasattr(faceflash_core, "hamming_topk_batch"):
+        pca, db_codes = quantizers[512]
+        q_codes = np.ascontiguousarray(q_codes_cache[512], dtype=np.uint8)
+        n_cand = min(100, len(database) - 1)
+
+        # warmup
+        faceflash_core.hamming_topk_batch(q_codes[:min(10, len(q_codes))], db_codes, n_cand, True)
+
+        t0 = time.perf_counter()
+        flat = faceflash_core.hamming_topk_batch(q_codes, db_codes, n_cand, True)
+        cand = np.asarray(flat).astype(np.intp).reshape(len(queries), -1)
+        # cosine rerank (vectorized per query)
+        preds = np.empty(len(queries), dtype=np.intp)
+        for i in range(len(queries)):
+            ci = cand[i]
+            preds[i] = ci[np.argmax(database[ci] @ queries[i])]
+        total_s = time.perf_counter() - t0
+
+        # Tie-aware recall (matches benchmark_method): a prediction is correct
+        # if its distance equals the true nearest distance — handles tiled
+        # duplicates so the batched row isn't unfairly penalized at 500K/1M.
+        gt_sims = np.array([float(database[gt[i]] @ queries[i]) for i in range(len(queries))])
+        pred_sims = np.array([float(database[preds[i]] @ queries[i]) for i in range(len(queries))])
+        correct = int(np.sum(pred_sims >= gt_sims - 1e-5))
+        results.append({
+            "method": "FaceFlash (512b/100c, batched)",
+            "recall_at_1": correct / len(queries),
+            "latency_mean_ms": float(total_s * 1000 / len(queries)),
+            "latency_median_ms": float(total_s * 1000 / len(queries)),
+            "latency_p95_ms": float(total_s * 1000 / len(queries)),
+            "latency_p99_ms": float(total_s * 1000 / len(queries)),
+            "qps": float(len(queries) / total_s),
+            "memory_mb": round(db_codes.nbytes / 1024 / 1024, 2),
+            "memory_note": "binary index only; batched multi-core scan (bulk throughput)",
+            "index_type": "binary_hash",
+            "params": {"n_bits": 512, "n_candidates": 100, "batched": True},
+            "float_vectors_mb": round(database.nbytes / 1024 / 1024, 2),
+        })
+
     return results
+
+
+def _batched_row(name, preds, database, queries, gt, total_s, mem_mb, note, index_type):
+    """Build a batched-throughput result with TIE-AWARE recall. Latency fields
+    hold the effective per-query time (batch wall-time / m); qps is the headline."""
+    m = len(queries)
+    gt_sims = np.array([float(database[gt[i]] @ queries[i]) for i in range(m)])
+    pred_sims = np.array([float(database[int(preds[i])] @ queries[i]) for i in range(m)])
+    correct = int(np.sum(pred_sims >= gt_sims - 1e-5))
+    per_q_ms = total_s * 1000.0 / m
+    return {
+        "method": name, "recall_at_1": correct / m,
+        "latency_mean_ms": per_q_ms, "latency_median_ms": per_q_ms,
+        "latency_p95_ms": per_q_ms, "latency_p99_ms": per_q_ms,
+        "qps": m / total_s, "memory_mb": mem_mb, "memory_note": note,
+        "index_type": index_type, "params": {"batched": True},
+    }
+
+
+def bench_competitors_batched(database, queries, gt):
+    """Batched (multi-core) throughput for HNSW + USearch — the fair, apples-to-
+    apples counterpart to FaceFlash's batched row. Each library processes ALL
+    queries in one call across ALL cores, exactly like FaceFlash batched, so the
+    throughput comparison is honest (single-query rows stay single-threaded)."""
+    out = []
+    m = len(queries)
+    ncpu = os.cpu_count() or 1
+    n_db, dim = database.shape
+
+    if HAS_HNSW:
+        try:
+            idx = hnswlib.Index(space='ip', dim=dim)
+            idx.init_index(max_elements=n_db, ef_construction=200, M=32)
+            idx.add_items(database, np.arange(n_db))
+            idx.set_ef(128)
+            idx.set_num_threads(ncpu)                       # all cores, like FaceFlash batched
+            idx.knn_query(queries[:min(32, m)], k=1)        # warmup
+            t0 = time.perf_counter()
+            labels_out, _ = idx.knn_query(queries, k=1)     # one batched call
+            dt = time.perf_counter() - t0
+            preds = np.asarray(labels_out)[:, 0]
+            out.append(_batched_row(
+                "HNSWLIB (ef=128, batched)", preds, database, queries, gt, dt,
+                round(database.nbytes / 1024 / 1024 * 1.5, 2),
+                "vectors + graph; batched multi-core throughput", "hnsw"))
+        except Exception as e:
+            print(f"         HNSW batched failed: {e}")
+
+    if HAS_USEARCH:
+        try:
+            uidx = USearchIndex(ndim=dim, metric='ip')
+            uidx.add(np.arange(n_db), database)
+            uidx.search(queries[:min(32, m)], 1, threads=ncpu)   # warmup
+            t0 = time.perf_counter()
+            matches = uidx.search(queries, 1, threads=ncpu)      # one batched call
+            dt = time.perf_counter() - t0
+            preds = np.asarray(matches.keys).reshape(m, -1)[:, 0]
+            out.append(_batched_row(
+                "USearch (batched)", preds, database, queries, gt, dt,
+                round(database.nbytes / 1024 / 1024 * 1.3, 2),
+                "vectors + graph; batched multi-core throughput", "hnsw"))
+        except Exception as e:
+            print(f"         USearch batched failed: {e}")
+
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -374,7 +521,7 @@ def run_scale(database, queries, gt, scale_name, n_identities):
     all_methods = []
 
     # 1. FAISS-Flat
-    print(f"\n  [1/6] FAISS-Flat (exact brute force)...")
+    print(f"\n  [1/7] FAISS-Flat (exact brute force)...")
     r = bench_faiss_flat(database, queries, gt)
     if r:
         all_methods.append(r)
@@ -382,7 +529,7 @@ def run_scale(database, queries, gt, scale_name, n_identities):
               f"{r['memory_mb']:.1f}MB")
 
     # 2. FAISS-IVF
-    print(f"  [2/6] FAISS-IVF...")
+    print(f"  [2/7] FAISS-IVF...")
     nlist = min(256, int(np.sqrt(n_db)))
     for nprobe in (16, 32, 64):
         r = bench_faiss_ivf(database, queries, gt, nlist=nlist, nprobe=nprobe)
@@ -392,7 +539,7 @@ def run_scale(database, queries, gt, scale_name, n_identities):
                   f"{r['latency_mean_ms']:.3f}ms")
 
     # 3. HNSWLIB
-    print(f"  [3/6] HNSWLIB...")
+    print(f"  [3/7] HNSWLIB...")
     hnsw_results = bench_hnswlib(database, queries, gt, ef_values=(32, 64, 128))
     for r in hnsw_results:
         all_methods.append(r)
@@ -401,7 +548,7 @@ def run_scale(database, queries, gt, scale_name, n_identities):
               f"{r['latency_mean_ms']:.3f}ms  {r['memory_mb']:.1f}MB")
 
     # 4. USearch
-    print(f"  [4/6] USearch...")
+    print(f"  [4/7] USearch...")
     r = bench_usearch(database, queries, gt)
     if r:
         all_methods.append(r)
@@ -409,7 +556,7 @@ def run_scale(database, queries, gt, scale_name, n_identities):
               f"{r['memory_mb']:.1f}MB")
 
     # 5. ScaNN
-    print(f"  [5/6] ScaNN...")
+    print(f"  [5/7] ScaNN...")
     r = bench_scann(database, queries, gt)
     if r:
         all_methods.append(r)
@@ -419,13 +566,23 @@ def run_scale(database, queries, gt, scale_name, n_identities):
         print(f"         (not installed — pip install scann)")
 
     # 6. FaceFlash
-    print(f"  [6/6] FaceFlash (PCA+ITQ binary hash)...")
+    print(f"  [6/7] FaceFlash (PCA+ITQ binary hash)...")
     ff_results = bench_faceflash(database, queries, gt)
     for r in ff_results:
         all_methods.append(r)
-        print(f"         {r['params']['n_bits']}b/{r['params']['n_candidates']}c: "
-              f"R@1={r['recall_at_1']*100:.1f}%  {r['latency_mean_ms']:.3f}ms  "
-              f"{r['memory_mb']:.1f}MB")
+        tag = "batched" if r["params"].get("batched") else \
+              ("parallel" if r["params"].get("parallel") else
+               f"{r['params']['n_bits']}b/{r['params']['n_candidates']}c")
+        print(f"         {tag}: R@1={r['recall_at_1']*100:.1f}%  "
+              f"{r['latency_mean_ms']:.3f}ms  {r['qps']:.0f} qps  {r['memory_mb']:.1f}MB")
+
+    # 7. Batched (multi-core) throughput for the competitors — the fair
+    # counterpart to FaceFlash batched, so the QPS comparison is apples-to-apples.
+    print(f"  [7/7] Batched throughput — HNSW + USearch (all cores)...")
+    for r in bench_competitors_batched(database, queries, gt):
+        all_methods.append(r)
+        print(f"         {r['method']}: R@1={r['recall_at_1']*100:.1f}%  "
+              f"{r['qps']:.0f} qps  {r['memory_mb']:.1f}MB")
 
     return all_methods
 
@@ -487,7 +644,8 @@ def main():
         os.environ['DATA_TAG'] = args.data_tag
 
     requested_scales = [s.strip() for s in args.scales.split(",")]
-    scale_map = {"100K": 100000, "500K": 500000, "1M": 1000000}
+    scale_map = {"100K": 100000, "200K": 200000, "300K": 300000,
+                 "500K": 500000, "1M": 1000000}
 
     print("╔═══════════════════════════════════════════════════════════════════════╗")
     print("║  FaceFlash — ANN Comparison Benchmark                                ║")
@@ -513,7 +671,7 @@ def main():
     all_db, queries = split_queries(embs, labels, n_queries=args.queries)
     print(f"  Database pool: {len(all_db):,} | Queries: {len(queries)}")
 
-    # Determine which scales we can run
+    # Determine which scales we can run (tile real data if needed for throughput)
     scales_to_run = []
     for s in requested_scales:
         n = scale_map.get(s)
@@ -521,9 +679,11 @@ def main():
             print(f"  WARNING: Unknown scale '{s}', skipping")
             continue
         if n > len(all_db):
-            print(f"  WARNING: Scale {s} ({n:,}) exceeds available data "
-                  f"({len(all_db):,}), skipping")
-            continue
+            # Tile real embeddings to reach the target — preserves cosine
+            # distribution while allowing competitive comparison at larger scales.
+            reps_needed = int(np.ceil(n / len(all_db)))
+            print(f"  NOTE: Scale {s} ({n:,}) > available ({len(all_db):,}) "
+                  f"— tiling real embeddings {reps_needed}x")
         scales_to_run.append((s, n))
 
     if not scales_to_run:
@@ -552,7 +712,12 @@ def main():
     }
 
     for scale_name, n_db in scales_to_run:
-        database = np.ascontiguousarray(all_db[:n_db])
+        if n_db <= len(all_db):
+            database = np.ascontiguousarray(all_db[:n_db])
+        else:
+            # Tile real embeddings to reach the target scale
+            reps = int(np.ceil(n_db / len(all_db)))
+            database = np.ascontiguousarray(np.tile(all_db, (reps, 1))[:n_db])
         n_ids = len(set(str(labels[i]) for i in range(min(n_db, len(labels)))))
 
         gt = compute_ground_truth(database, queries)

@@ -1,0 +1,15 @@
+{
+  "scale": "100K",
+  "n_database": 100000,
+  "binary_index_mb": 6.1,
+  "float_vectors_mb": 195.3,
+  "compression_ratio": 32.0,
+  "rss_baseline_mb": 1295.7,
+  "rss_after_build_mb": 1398.5,
+  "rss_after_search_mb": 1398.5,
+  "peak_rss_mb": 2553.9,
+  "search_latency_mean_ms": 0.3,
+  "search_latency_p95_ms": 0.308,
+  "note": "Floats held in RAM for this test. In mmap mode (after save/load), only binary_index_mb is committed; floats are paged on demand.",
+  "backend": "faceflash_core (Rust, POPCNT-accelerated)"
+}

@@ -227,6 +227,61 @@ class FaceIndex:
             ))
         return results
 
+    def search_batch(self, query_embeddings: np.ndarray, k: int = 1,
+                     n_candidates: Optional[int] = None,
+                     parallel: bool = True) -> List[List[Tuple[str, float, int]]]:
+        """Search many queries in one shot.
+
+        Equivalent to calling search() per row, but the Hamming phase crosses
+        the Python<->Rust boundary once for the whole batch instead of once per
+        query. With parallel=True the queries are scanned across CPU cores
+        (embarrassingly parallel). This is the throughput path -- use it for
+        benchmarks and bulk identification; use search() for single lookups.
+
+        Coarse clustering (IVF) is not applied here: batching targets full-scan
+        throughput. Call search() per query if you need the clustered path.
+        """
+        self._flush_pending()
+        if self.vectors is None or self.count == 0:
+            return [[] for _ in range(len(query_embeddings))]
+
+        query_embeddings = np.ascontiguousarray(query_embeddings, dtype=np.float32)
+        if query_embeddings.ndim != 2 or query_embeddings.shape[1] != self.dim:
+            raise ValueError(f"Expected (M, {self.dim}) queries, got {query_embeddings.shape}")
+        m = query_embeddings.shape[0]
+
+        # Encode all queries
+        if self._pca_fitted:
+            q_packed = self.quantizer.encode(query_embeddings)
+        else:
+            q_binary = (query_embeddings @ self.projection.T > 0).astype(np.uint8)
+            q_packed = np.packbits(q_binary, axis=1)
+        q_packed = np.ascontiguousarray(q_packed, dtype=np.uint8)
+
+        if n_candidates is None:
+            n_candidates = max(100, k * 10)
+        n_cand = min(n_candidates, self.count - 1) if self.count > 1 else 1
+
+        # Phase 1: one batched Hamming call -> (m, n_cand) candidate indices
+        if _HAS_RUST:
+            flat = _rust.hamming_topk_batch(q_packed, self.vectors, n_cand, parallel)
+            cand = np.asarray(flat).astype(np.intp).reshape(m, -1)
+        else:
+            xor = np.bitwise_xor(self.vectors[None, :, :], q_packed[:, None, :])
+            dists = _POPCOUNT_TABLE[xor].sum(axis=2)
+            cand = np.argpartition(dists, min(n_cand, self.count - 1), axis=1)[:, :n_cand]
+
+        # Phase 2: cosine rerank per query (vectorized over candidates)
+        results: List[List[Tuple[str, float, int]]] = []
+        for i in range(m):
+            ci = cand[i]
+            sims = self.float_vectors[ci] @ query_embeddings[i]
+            order = np.argsort(-sims)[:k]
+            results.append([
+                (self.labels[ci[j]], float(sims[j]), int(ci[j])) for j in order
+            ])
+        return results
+
     def search_binary_only(self, query_embedding: np.ndarray, k: int = 1) -> List[Tuple[str, int, int]]:
         """Search using only binary codes (fastest, lower accuracy)."""
         self._flush_pending()

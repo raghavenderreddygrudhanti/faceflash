@@ -154,7 +154,14 @@ def chart_pareto():
 
 # ─── 3. Recall vs candidates, per bit-width, with CI bands ───────────────────
 def chart_recall_candidates():
-    d = json.load(open(RES / "bench_nbits_grid_1m.json"))
+    # Prefer the fresh MS1MV2 grid; fall back to the older VGGFace2 1M run.
+    fresh = RES / "bench_nbits_grid.json"
+    src = fresh if fresh.exists() else RES / "bench_nbits_grid_1m.json"
+    d = json.load(open(src))
+    n_db = d.get("n_database") or d.get("database")
+    scale_lbl = (f"{n_db/1e6:.0f}M" if n_db and n_db >= 1e6
+                 else f"{n_db/1e3:.0f}K" if n_db else "1M")
+    dataset = "MS1MV2" if "ms1m" in str(src).lower() or fresh.exists() else "VGGFace2"
     fig, ax = plt.subplots(figsize=(8, 5))
     for i, b in enumerate(d["grid"]):
         x = [c["n_cand"] for c in b["candidates"]]
@@ -169,7 +176,7 @@ def chart_recall_candidates():
     ax.set_xlabel("Rerank candidates")
     ax.set_ylabel("Recall@1 (%)")
     titled(ax, "More bits or more candidates both buy recall",
-           f"1M faces (VGGFace2) · bands = 95% CI over {d['n_queries']} queries")
+           f"{scale_lbl} faces ({dataset}) · bands = 95% CI over {d['n_queries']} queries")
     ax.legend(title="code length", frameon=False, loc="lower right")
     save(fig, "chart_recall_vs_candidates")
 
@@ -177,26 +184,56 @@ def chart_recall_candidates():
 # ─── 4. Rank-1 tie vs exact ceiling ──────────────────────────────────────────
 def chart_rank1():
     d = json.load(open(RES / "bench_identification_ms1m.json"))
-    names, vals, cols = [], [], []
-    for r in d["results"]:
-        nm = r["method"].replace(" (exact)", "\n(exact)").replace("FaceFlash", "FaceFlash\n")
-        names.append(nm)
-        vals.append(r["rank1"] * 100)
-        cols.append(MUTED if "exact" in r["method"] else ACCENT)
-    ceiling = next(r["rank1"] * 100 for r in d["results"] if "exact" in r["method"])
 
-    fig, ax = plt.subplots(figsize=(8, 4.6))
-    bars = ax.bar(names, vals, color=cols, width=0.62,
+    # Build bars: FAISS-Flat first, then FaceFlash configs
+    names, vals, cols, mem_labels = [], [], [], []
+    for r in d["results"]:
+        method = r["method"]
+        rank1 = r["rank1"] * 100
+        mem = r.get("memory_mb", None)
+
+        if "exact" in method.lower():
+            names.append("FAISS-Flat\n(exact)")
+            cols.append(MUTED)
+            mem_labels.append("94 MB")
+        elif "256" in method:
+            names.append("FaceFlash\n(256b)")
+            cols.append("#06d6a0")  # lighter teal
+            mem_labels.append(f"{mem:.1f} MB" if mem else "")
+        elif "512/100" in method:
+            names.append("FaceFlash\n(512b)")
+            cols.append(ACCENT)
+            mem_labels.append(f"{mem:.1f} MB" if mem else "")
+        elif "512/300" in method:
+            names.append("FaceFlash\n(512b/300c)")
+            cols.append(ACCENT_DK)
+            mem_labels.append(f"{mem:.1f} MB" if mem else "")
+        else:
+            continue
+        vals.append(rank1)
+
+    ceiling = next((r["rank1"] * 100 for r in d["results"] if "exact" in r["method"]),
+                   max(vals))
+
+    fig, ax = plt.subplots(figsize=(9, 5.2))
+    bars = ax.bar(names, vals, color=cols, width=0.6,
                   edgecolor="white", linewidth=1.5, zorder=3)
     ax.axhline(ceiling, ls="--", color=SUBINK, alpha=0.7, lw=1.2)
-    for bar, v in zip(bars, vals):
-        ax.text(bar.get_x() + bar.get_width() / 2, v + 1.5, f"{v:.1f}%",
-                ha="center", fontsize=12, fontweight="bold", color=INK)
+
+    for bar, v, mem_lbl in zip(bars, vals, mem_labels):
+        # Accuracy label on top
+        ax.text(bar.get_x() + bar.get_width() / 2, v + 1.2, f"{v:.1f}%",
+                ha="center", fontsize=13, fontweight="bold", color=INK)
+        # Memory label inside bar
+        if mem_lbl:
+            ax.text(bar.get_x() + bar.get_width() / 2, v / 2, mem_lbl,
+                    ha="center", fontsize=10, color="white", fontweight="bold", alpha=0.9)
+
     ax.set_ylabel("Rank-1 identification accuracy (%)")
     ax.set_ylim(0, 108)
     ax.grid(axis="x", visible=False)
     titled(ax, f"FaceFlash ties exact search on {d['n_gallery_identities']:,} people",
-           "The binary compression is free · MS1MV2, 1:N identification")
+           f"Same accuracy, 35x less memory · MS1MV2, 1:N identification")
     save(fig, "chart_rank1_tie")
 
 
