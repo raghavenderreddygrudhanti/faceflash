@@ -35,9 +35,9 @@ Batched rows use all cores (128-thread AMD EPYC 9355).
 
 > **Memory = binary index only.** Float vectors for reranking are mmap'd from disk after `save()`/`load()` — only ~100 candidate rows are paged per query. See [Limitations](#limitations) for details.
 
-![Memory to index 100K faces — FaceFlash 3 MB vs HNSW 293 MB](docs/figures/chart_memory_bar.png)
+![Memory to index 100K faces — FaceFlash 6 MB vs HNSW 293 MB](docs/figures/chart_memory_bar.png)
 
-![FaceFlash demo — search 100,000 faces from a 3 MB index in ~0.5 ms on CPU](docs/figures/demo.gif)
+![FaceFlash demo — search 100,000 faces from a 6 MB index in ~0.4 ms on CPU](docs/figures/demo.gif)
 
 ## Quick Start
 
@@ -64,18 +64,19 @@ ff.register_folder("employees/")  # folder/person_name/photo.jpg
 ff.save("my_index/")
 ```
 
-> **Note:** Installing from source builds the Rust POPCNT backend (50× faster search) into the package automatically — it just needs a Rust toolchain present (prebuilt PyPI wheels need nothing). If the backend is unavailable, search transparently falls back to NumPy. For best accuracy, use pre-aligned 112×112 face images. See [Limitations](#limitations).
+> **Note:** Installing from source builds the Rust AVX-512/NEON backend into the package automatically — it just needs a Rust toolchain present (prebuilt PyPI wheels need nothing). If the backend is unavailable, search transparently falls back to NumPy. For best accuracy, use pre-aligned 112×112 face images. See [Limitations](#limitations).
 
 ## How It Works
 
-Each face becomes a tiny binary fingerprint (64 bytes), searched with hardware
-POPCNT, then the top few candidates are verified with exact cosine similarity.
-You get exact-quality accuracy at a fraction of the memory.
+Each face becomes a tiny binary fingerprint (64 bytes), searched with AVX-512
+VPOPCNTDQ (or NEON on ARM, scalar POPCNT elsewhere), then the top few
+candidates are verified with exact cosine similarity. You get exact-quality
+accuracy at a fraction of the memory.
 
 ```
 Image → Detect Face → ArcFace Embedding (512-dim) → PCA+ITQ Binary Code (64 bytes)
                                                               ↓
-Query → Same pipeline → Hamming Scan (Rust POPCNT) → Top-K Cosine Rerank → Match
+Query → Same pipeline → Hamming Scan (Rust AVX-512) → Top-K Cosine Rerank → Match
 ```
 
 ## vs the Competition (100K faces, single-threaded)
@@ -217,28 +218,29 @@ Measured on **real MS1MV2 faces** (Rust backend, single thread). `n_probe` is th
 recall/speed knob — clustering trades recall for speed, so it's for when you can
 tolerate approximate results, not when you need exact recall:
 
-**100K faces** (full scan: 100% recall @ 0.96 ms)
+**100K faces** (full scan: 100% recall @ 0.31 ms)
 
 | n_probe | Recall@1 | Latency | Speedup |
 |---------|----------|---------|---------|
-| 8  | 90.8% | 0.10 ms | 9.2× |
-| 16 | 95.2% | 0.15 ms | 6.5× |
-| 32 | 97.4% | 0.24 ms | 4.0× |
-| 64 | 99.0% | 0.45 ms | 2.1× |
+| 8  | 93.1% | 0.09 ms | 3.6× |
+| 16 | 96.1% | 0.12 ms | 2.6× |
+| 32 | 98.5% | 0.17 ms | 1.8× |
+| 64 | 99.3% | 0.28 ms | 1.1× |
 
-**500K faces** (full scan: 100% recall @ 4.58 ms)
+**500K faces** (full scan: 100% recall @ 1.54 ms)
 
 | n_probe | Recall@1 | Latency | Speedup |
 |---------|----------|---------|---------|
-| 16 | 84.2% | 0.41 ms | 11× |
-| 32 | 91.6% | 0.71 ms | 6.5× |
-| 64 | 95.5% | 1.44 ms | 3.2× |
+| 8  | 79.8% | 0.19 ms | 8.2× |
+| 16 | 87.9% | 0.31 ms | 5.0× |
+| 32 | 92.8% | 0.56 ms | 2.8× |
+| 64 | 96.5% | 1.04 ms | 1.5× |
 
 The speedup **widens as the database grows** — full scan slows ~linearly, clustered
-stays much flatter (32× faster at 500K, n_probe=4). The honest tradeoff: holding
-≥99% recall costs most of the speedup (~2× at 100K), while a tolerance for ~95%
-recall buys 6–11×. Probe every bucket and you reproduce the exact full-scan result;
-leave clustering off (the default) and search is unchanged.
+stays much flatter. The honest tradeoff: with VPOPCNTDQ making the full scan so fast
+(0.31ms at 100K), clustering's benefit is modest at small scales. At 500K+, clustering
+buys 5–8× for ~88–93% recall. Probe every bucket and you reproduce the exact full-scan
+result; leave clustering off (the default) and search is unchanged.
 
 ### Raw Scan Speed (SIMD)
 
@@ -320,14 +322,14 @@ Result: fewer candidates needed for the same recall vs random projection.
 
 - **Scan cost** — the default search is a full linear scan. For large databases, `build_clusters()` adds an optional IVF layer that scans only the closest buckets (sub-linear), trading a little recall for speed — see [Scaling to Millions](#scaling-to-millions)
 - **Memory during build** — constructing the index holds all float vectors in RAM. The mmap benefit applies after `save()`/`load()`
-- **Face detection** — raw photos are handled by a built-in SCRFD detector with 5-point alignment to the ArcFace template (Haar cascade as fallback). The retrieval benchmarks (99.9% recall, 95.8% rank-1) used pre-aligned data so they isolate the index, not the detector. If you already have aligned 112×112 crops, pass them directly to skip detection.
-- **Rust backend** — builds into the package automatically on `pip install` (needs a Rust toolchain from source; prebuilt PyPI wheels need nothing). Falls back to NumPy if unavailable
+- **Face detection** — raw photos are handled by a built-in SCRFD detector with 5-point alignment to the ArcFace template (Haar cascade as fallback). The retrieval benchmarks (100% recall, 95.8% rank-1) used pre-aligned data so they isolate the index, not the detector. If you already have aligned 112×112 crops, pass them directly to skip detection.
+- **Rust backend** — builds into the package automatically on `pip install` (needs a Rust toolchain from source; prebuilt PyPI wheels need nothing). AVX-512 VPOPCNTDQ is runtime-detected; CPUs without it use scalar POPCNT (still fast, just not 3.5×). Falls back to NumPy if Rust is unavailable
 - **Rerank latency is cache-dependent** — the quoted times assume float vectors are OS-cached. On truly memory-constrained devices, rerank becomes I/O-bound
 
 ## Installation
 
 ```bash
-# Installing from source builds the Rust POPCNT backend into the package
+# Installing from source builds the Rust AVX-512/NEON backend into the package
 # automatically (no manual step) — requires a Rust toolchain on your machine:
 #   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"   # CPU inference
@@ -358,8 +360,8 @@ bash scripts/runpod_ms1m.sh      # MS1MV2 (1:N identification; FORCE_EXTRACT=1 f
 **v0.1.0** (current) — working system with proven benchmarks
 - [x] PCA+ITQ binary quantization + Rust POPCNT search
 - [x] High-level API (register, search, verify)
-- [x] Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K–500K
-- [x] 1:N identification on 45,832 distinct identities (MS1MV2)
+- [x] Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K–1M
+- [x] 1:N identification on 44,290 distinct identities (MS1MV2)
 - [x] **5-point alignment** (SCRFD/RetinaFace) — raw photos hit 99.85% LFW (+1.28 pts)
 
 **v0.2.0** — production quality
