@@ -10,10 +10,13 @@ insightface package required.
 Falls back gracefully: if the detector or its model is unavailable, callers use
 the OpenCV Haar + center-crop path in detect.py.
 """
+import logging
 import urllib.request
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 MODEL_DIR = Path.home() / ".faceflash" / "models"
 DET_PATH = MODEL_DIR / "det_10g.onnx"
@@ -33,7 +36,7 @@ def _ensure_det_model():
     if DET_PATH.exists():
         return DET_PATH
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    print("  Downloading SCRFD face detector (~17MB)...")
+    logger.info("Downloading SCRFD face detector (~17MB)...")
     urllib.request.urlretrieve(DET_URL, DET_PATH)
     return DET_PATH
 

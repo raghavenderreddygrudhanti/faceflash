@@ -3,9 +3,12 @@ Face embedding — converts a face image to a 512-dim vector using ArcFace (ONNX
 Downloads the model automatically on first use.
 """
 
+import logging
 import urllib.request
 from pathlib import Path
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 MODEL_URL = "https://huggingface.co/onnx-community/arcface/resolve/main/arcface_r100.onnx"
 MODEL_DIR = Path.home() / ".faceflash" / "models"
@@ -17,9 +20,9 @@ def ensure_model():
     if MODEL_PATH.exists():
         return MODEL_PATH
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    print("  Downloading ArcFace model (~250MB)...")
+    logger.info("Downloading ArcFace model (~250MB)...")
     urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
-    print(f"  Saved to {MODEL_PATH}")
+    logger.info("Saved model to %s", MODEL_PATH)
     return MODEL_PATH
 
 

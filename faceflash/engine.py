@@ -3,6 +3,7 @@ FaceFlash Engine — the main high-level API.
 Combines detection + embedding + quantization + search.
 """
 
+import logging
 import numpy as np
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,8 @@ import time
 from faceflash.detect import load_image, detect_and_align
 from faceflash.embed import FaceEmbedder
 from faceflash.index import FaceIndex
+
+logger = logging.getLogger(__name__)
 
 
 class FaceFlash:
@@ -96,8 +99,7 @@ class FaceFlash:
                 registered += 1
             except Exception as e:
                 errors += 1
-                if not progress:
-                    print(f"  Warning: failed to register {img_path}: {e}")
+                logger.warning("Failed to register %s: %s", img_path, e)
 
         return {"registered": registered, "errors": errors, "total": self.index.count}
 
