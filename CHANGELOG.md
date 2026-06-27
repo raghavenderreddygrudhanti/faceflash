@@ -1,51 +1,40 @@
 # Changelog
 
-## 0.3.0 (2026-06-27)
+All notable changes to FaceFlash are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/).
 
-### Performance
-- AVX-512 VPOPCNTDQ kernel — native 512-bit popcount (3.5x faster than scalar POPCNT on Ice Lake/Zen 4+/EPYC 9004+)
-- Cache-blocked batched search — 17x throughput at 500K-1M, sidesteps memory-bandwidth wall
-- NEON kernels — ARM-optimized (vcntq_u8 native byte popcount)
-- Coarse clustering (IVF) — 2.7-4.9x faster at 100K-400K with `build_clusters()`
+## [0.1.0] - 2026-06-27
 
-### Benchmarks (canonical: AMD EPYC 9355, 128 threads, AVX-512 active)
-- 100% Recall@1 at every scale (100K, 200K, 300K, 500K, 1M)
-- 96x less memory than HNSW (256b config: 3 MB at 100K, 15 MB at 500K, 30 MB at 1M)
-- Batched: 27,661 QPS at 100K (4.8x HNSW); 10,337 QPS at 500K (1.9x HNSW)
-- Single-query: 0.30ms at 100K (2x faster than HNSW ef=128)
-- 1:N identification: 95.8% rank-1 on 44,290 identities (ties exact search)
-- Benchmarked against FAISS-Flat, FAISS-IVF, HNSWLIB, USearch, ScaNN at 100K-1M
+First public release. (Everything below shipped in the initial release; earlier
+0.1/0.2/0.3 labels were internal development milestones, never published.)
 
-## 0.2.0 (2026-06-26)
+### Added
+- **Core retrieval** — PCA+ITQ binary quantization with a two-phase search
+  (Hamming filter → exact cosine rerank). 100% Recall@1 vs exact search at
+  48–96× less memory than HNSW, measured on MS1MV2 from 100K to 1M faces.
+- **High-level API** (`FaceFlash`) — `register`, `register_folder`, `search`,
+  `verify`, plus index management: `remove`, `names`, `save`, `load`, `stats`,
+  and Pythonic `len()` / `in` / `repr()`.
+- **Low-level index** (`FaceIndex`) — direct embedding add/search, `add_batch`,
+  `search_batch` (batched bulk throughput), and `build_clusters` (IVF).
+- **Rust SIMD backend** — runtime-dispatched AVX-512 VPOPCNTDQ (x86, ~3× faster
+  than scalar), NEON (ARM), and scalar POPCNT fallback. Multi-core, cache-blocked
+  batched search (10–17× throughput vs single-query serial on a 128-thread EPYC).
+- **5-point alignment** — SCRFD/RetinaFace alignment to the ArcFace template for
+  raw photos (+1.28 LFW points over a basic center-crop), with a Haar fallback.
+- **Coarse clustering (IVF)** — optional sub-linear scan for large galleries.
+- **Packaging** — `pip install faceflash` ships the Rust backend; CPU/GPU
+  inference via the `[cpu]` / `[gpu]` extras. Fully type-hinted (PEP 561).
+- **Benchmarks** — reproducible suite vs FAISS, HNSWLIB, USearch, and ScaNN at
+  100K–1M, with tie-aware recall, a fair batched-throughput comparison, and
+  measured (not estimated) FaceFlash memory. 1:N identification: 95.8% rank-1
+  on 44,290 identities (ties exact search).
 
-### Features
-- 5-point face alignment (SCRFD/RetinaFace) — 99.85% LFW accuracy (+1.28 over Haar)
-- Prebuilt wheels via maturin CI (no Rust toolchain needed for end users)
-- Full 85K-identity extraction from MS1MV2 (76,872 identities, 645K embeddings)
-- On-device memory measurement (actual RSS: 6.1 MB binary index at 100K)
-- `FaceIndex.search_batch()` — batched search via single FFI call
+### Known limitations
+- Single-query latency at 1M is O(N); HNSW is faster there (batched ties).
+- Competitor memory figures are estimated (vectors + index-overhead formula);
+  FaceFlash's memory is measured.
+- The 1M benchmark scale tiles 645K real embeddings 2× (flagged in results).
 
-### Infrastructure
-- `runpod_ms1m.sh` — self-contained benchmark pipeline (clone → build → extract → benchmark → push)
-- Multi-scale charts (memory, throughput, latency, recall-vs-memory)
-- `bench_batch_qps.py` — isolated throughput benchmark (per-query vs batched)
-
-## 0.1.0 (2026-06-25)
-
-Initial public release.
-
-### Features
-- PCA+ITQ binary quantization for face embeddings (128/256/384/512 bits)
-- Rust POPCNT backend (hardware-accelerated Hamming distance)
-- Two-phase search: Hamming filter -> cosine rerank
-- High-level API: `register()`, `search()`, `verify()`, `register_folder()`
-- Buffered O(n) `add()` with auto-flush
-- `save()`/`load()` with mmap'd float vectors (resident memory = binary index only)
-- Configurable `n_bits` and `n_candidates` knobs
-- Face detection (SCRFD + Haar fallback)
-- ArcFace ONNX embedding (512-dim, auto-downloads)
-
-### Benchmarks
-- MS1MV2: 100% recall@1 at 100K, 6.1 MB index
-- MS1MV2: 95.8% rank-1 identification (ties exact brute-force)
-- Compared against FAISS-Flat, FAISS-IVF, HNSWLIB, USearch, ScaNN
+[0.1.0]: https://github.com/raghavenderreddygrudhanti/faceflash/releases/tag/v0.1.0
