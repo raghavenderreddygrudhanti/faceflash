@@ -57,6 +57,8 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 | **Index build** | Auto (PCA fit) | Build graph | Build graph | Partition | None |
 
 > Tested on MS1MV2 (44,291 identities, 645,019 embeddings). Hardware: AMD EPYC 9355, 128 threads, AVX-512 active.
+>
+> **Memory = binary index only.** Float vectors for cosine reranking are mmap'd from disk after `save()`/`load()` — only ~100 candidate rows are paged per query. See [Limitations](#limitations).
 
 <div align="center">
 
