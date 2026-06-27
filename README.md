@@ -62,7 +62,7 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 
 <div align="center">
 
-<img src="docs/figures/chart_memory_scale.png" width="800" alt="Memory comparison: FaceFlash vs all competitors at 500K faces"/>
+<img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/chart_memory_scale.png" width="800" alt="Memory comparison: FaceFlash vs all competitors at 500K faces"/>
 
 <sub><b>Index Memory at 500K Faces (256-bit compact config):</b> FaceFlash (15 MB) vs HNSW (1,465 MB) — 96× less RAM at 100% recall</sub>
 
@@ -70,7 +70,7 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 
 <div align="center">
 
-<img src="docs/figures/demo.gif" width="720" alt="FaceFlash live demo"/>
+<img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/demo.gif" width="720" alt="FaceFlash live demo"/>
 
 </div>
 
@@ -198,7 +198,7 @@ for i, matches in enumerate(results):
 
 
 
-![FaceFlash Architecture Pipeline](docs/figures/architecture_pipeline.png)
+![FaceFlash Architecture Pipeline](https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/architecture_pipeline.png)
 
 Each face is compressed into a **64-byte binary fingerprint**:
 
@@ -239,7 +239,7 @@ All single-query rows are single-threaded. Batched rows use all available cores.
 
 <div align="center">
 
-<img src="docs/figures/chart_throughput_scale.png" width="760" alt="Batched throughput: FaceFlash vs all competitors 100K to 1M"/>
+<img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/chart_throughput_scale.png" width="760" alt="Batched throughput: FaceFlash vs all competitors 100K to 1M"/>
 
 <sub><b>Batched Throughput (QPS):</b> FaceFlash 100K→1M — 4.8× faster than HNSW at 100K</sub>
 
@@ -247,7 +247,7 @@ All single-query rows are single-threaded. Batched rows use all available cores.
 
 <div align="center">
 
-<img src="docs/figures/chart_latency_scale.png" width="760" alt="Single-query latency: all methods 100K to 1M"/>
+<img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/chart_latency_scale.png" width="760" alt="Single-query latency: all methods 100K to 1M"/>
 
 <sub><b>Single-Query Latency:</b> FaceFlash 0.30ms vs HNSW 0.60ms at 100K — both at 100% recall</sub>
 
@@ -255,7 +255,7 @@ All single-query rows are single-threaded. Batched rows use all available cores.
 
 <div align="center">
 
-<img src="docs/figures/chart_recall_memory_scale.png" width="760" alt="Recall vs Memory at 500K"/>
+<img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/chart_recall_memory_scale.png" width="760" alt="Recall vs Memory at 500K"/>
 
 <sub><b>Recall vs Memory Pareto:</b> FaceFlash sits at the frontier — 100% recall, 30 MB</sub>
 
@@ -279,7 +279,7 @@ The hardest test: one photo per person in the gallery, identify them from a diff
 
 <div align="center">
 
-<img src="docs/figures/chart_rank1_tie.png" width="720" alt="Rank-1 identification ties exact search on 44,290 people"/>
+<img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/chart_rank1_tie.png" width="720" alt="Rank-1 identification ties exact search on 44,290 people"/>
 
 <sub><b>1:N Identification on 44,290 Identities:</b> FaceFlash matches FAISS-Flat accuracy at 32× less memory</sub>
 
@@ -382,7 +382,7 @@ ff.search("query.jpg", n_candidates=200)       # per-query override
 
 <div align="center">
 
-<img src="docs/figures/chart_clustering_tradeoff.png" width="720" alt="Clustering recall/speed tradeoff"/>
+<img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/chart_clustering_tradeoff.png" width="720" alt="Clustering recall/speed tradeoff"/>
 
 <sub><b>IVF Clustering Speedup:</b> 5–8× faster at 500K+ with configurable recall trade-off</sub>
 
