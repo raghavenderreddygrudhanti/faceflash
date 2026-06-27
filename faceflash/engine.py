@@ -183,3 +183,23 @@ class FaceFlash:
     def stats(self) -> dict:
         """Return index statistics."""
         return self.index.stats()
+
+    def names(self) -> list:
+        """Return the sorted list of registered names."""
+        return self.index.names()
+
+    def remove(self, name: str) -> int:
+        """Unregister a person — removes all their faces. Returns the count removed."""
+        return self.index.remove(name)
+
+    def __len__(self) -> int:
+        """Number of registered faces."""
+        return len(self.index)
+
+    def __contains__(self, name: str) -> bool:
+        """`name in ff` — whether this person is registered."""
+        return name in self.index
+
+    def __repr__(self) -> str:
+        return (f"FaceFlash(registered={len(self.index)}, "
+                f"people={len(self.index.names())})")

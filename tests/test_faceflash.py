@@ -185,3 +185,44 @@ def test_full_probe_matches_full_scan():
     idx.build_clusters(n_clusters=16)
     clustered = idx.search(embs[55], k=1, n_probe=16)
     assert plain[0][2] == clustered[0][2]
+
+
+# ── API completeness: len / contains / names / remove / repr ─────────────────
+def test_len_and_contains():
+    idx, _ = _build(n=1500)
+    assert len(idx) == 1500
+    assert "p100" in idx
+    assert "nobody" not in idx
+
+
+def test_names_sorted_and_complete():
+    idx, _ = _build(n=1500)
+    names = idx.names()
+    assert names == sorted(names)
+    assert "p0" in names and "p1499" in names
+    assert len(names) == 1500
+
+
+def test_remove():
+    idx, embs = _build(n=1500)
+    before = len(idx)
+    assert idx.remove("p100") == 1
+    assert len(idx) == before - 1
+    assert "p100" not in idx
+    # a different identity is still findable and labels stay correct
+    res = idx.search(embs[200], k=1)
+    assert res[0][0] == "p200"
+    # removing a missing label is a no-op
+    assert idx.remove("ghost") == 0
+
+
+def test_remove_then_search_no_stale_label():
+    idx, embs = _build(n=1500)
+    idx.remove("p42")
+    res = idx.search(embs[42], k=1)
+    assert res and res[0][0] != "p42"   # removed identity never returned
+
+
+def test_repr_contains_counts():
+    idx, _ = _build(n=1200)
+    assert "FaceIndex" in repr(idx) and "1200" in repr(idx)

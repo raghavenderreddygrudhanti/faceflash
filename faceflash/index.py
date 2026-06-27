@@ -377,3 +377,48 @@ class FaceIndex:
             "resident_memory_mb": round(mem_binary / 1024 / 1024, 2) if float_is_mmap else round((mem_binary + float_bytes) / 1024 / 1024, 2),
             "compression_ratio": round(float_bytes / max(mem_binary, 1), 1),
         }
+
+    def names(self) -> List[str]:
+        """Return the sorted list of distinct labels currently in the index."""
+        self._flush_pending()
+        return sorted(set(self.labels))
+
+    def remove(self, label: str) -> int:
+        """Remove every face with `label` from the index. Returns the count removed.
+
+        Compacts the binary + float arrays in place. The PCA quantizer stays
+        valid (no refit needed). Any coarse-clustering layer is invalidated and
+        dropped — call `build_clusters()` again if you were using it.
+        """
+        self._flush_pending()
+        if self.count == 0:
+            return 0
+        keep = [i for i, l in enumerate(self.labels) if l != label]
+        n_removed = self.count - len(keep)
+        if n_removed == 0:
+            return 0
+
+        keep_idx = np.asarray(keep, dtype=np.intp)
+        if self.vectors is not None:
+            self.vectors = np.ascontiguousarray(self.vectors[keep_idx])
+        if self.float_vectors is not None:
+            self.float_vectors = np.ascontiguousarray(self.float_vectors[keep_idx])
+        self.labels = [self.labels[i] for i in keep]
+        self.paths = [self.paths[i] for i in keep]
+        self.count = len(keep)
+        self.cluster = None  # membership indices are now stale; rebuild if needed
+        return n_removed
+
+    def __len__(self) -> int:
+        """Number of faces in the index (flushes any pending adds)."""
+        self._flush_pending()
+        return self.count
+
+    def __contains__(self, label: str) -> bool:
+        """`label in index` — whether any face carries this label."""
+        self._flush_pending()
+        return label in self.labels
+
+    def __repr__(self) -> str:
+        return (f"FaceIndex(faces={self.count}, identities={len(set(self.labels))}, "
+                f"n_bits={self.n_bits}, rust={_HAS_RUST})")

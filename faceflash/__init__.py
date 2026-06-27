@@ -17,6 +17,7 @@ Usage:
 __version__ = "0.1.0"
 
 from faceflash.engine import FaceFlash
+from faceflash.index import FaceIndex
 from faceflash.pca_quantize import PCABinaryQuantizer, backend_info
 
-__all__ = ["FaceFlash", "PCABinaryQuantizer", "backend_info"]
+__all__ = ["FaceFlash", "FaceIndex", "PCABinaryQuantizer", "backend_info"]
