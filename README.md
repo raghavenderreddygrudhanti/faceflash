@@ -138,57 +138,7 @@ ff.load("my_index/")
 
 ## How It Works
 
-<div align="center">
 
-```
-╔══════════════════════════════════════════════════════╗
-║              ⚡  FaceFlash Pipeline                  ║
-╚══════════════════════════════════════════════════════╝
-
-         📷  Input Image
-                │
-                ▼
-  ┌─────────────────────────────┐
-  │   Face Detection  (SCRFD)   │  Neural face detector
-  └─────────────┬───────────────┘
-                │
-                ▼
-  ┌─────────────────────────────┐
-  │   5-Point Alignment         │  RetinaFace landmarks
-  └─────────────┬───────────────┘
-                │
-                ▼
-  ┌─────────────────────────────┐
-  │   ArcFace ONNX Embedding    │  512-dim float vector
-  └──────┬──────────────────────┘
-         │
-    ┌────▼──────────────────────┐
-    │   PCA Projection          │  Align with identity axes
-    └────┬──────────────────────┘
-         │
-    ┌────▼──────────────────────┐
-    │   ITQ Rotation            │  Balanced binary marginals
-    └────┬──────────────────────┘
-         │
-         ▼
-  ───  64-byte Binary Fingerprint  ───
-         │
-         ▼
-  ┌─────────────────────────────────────────┐
-  │   Hamming Scan                          │
-  │   Rust AVX-512 VPOPCNTDQ               │  1 instr per 512-bit face
-  └─────────────────┬───────────────────────┘
-                    │  Top-K Candidates
-                    ▼
-  ┌─────────────────────────────────────────┐
-  │   Cosine Rerank  (~100 rows)            │  Exact float similarity
-  └─────────────────┬───────────────────────┘
-                    │
-                    ▼
-              Match Result
-```
-
-</div>
 
 ![FaceFlash Architecture Pipeline](docs/figures/architecture_pipeline.png)
 
