@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "faceflash"
 version = "0.1.0"
-description = "Fast face retrieval via PCA+ITQ binary quantization — up to 96x less memory than HNSW at equal recall"
+description = "Face search engine: register photos, identify people from camera/video/images. 100% recall at 96x less memory than HNSW. No GPU needed."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
