@@ -36,6 +36,14 @@ class FaceIndex:
     """
 
     def __init__(self, dim: int = 512, n_bits: int = 512):
+        """Create an empty index.
+
+        Args:
+            dim: embedding dimensionality (ArcFace = 512).
+            n_bits: binary code length. 512 (default) = best recall + fastest
+                (one AVX-512 instruction per code); 256 halves memory at ~2x
+                latency. Must be a multiple of 8.
+        """
         self.vectors: Optional[np.ndarray] = None  # Packed binary (N, n_bits//8)
         self.labels: List[str] = []
         self.paths: List[str] = []
