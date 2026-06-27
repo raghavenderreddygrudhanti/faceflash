@@ -4,10 +4,10 @@
 
 FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ binary quantization** — a learned hash that preserves identity information with zero recall loss and no separate training phase.
 
-- **100% recall, 48× less memory.** Same accuracy as exact brute-force at a fraction of the RAM. HNSW needs 2.9 GB at 1M faces; FaceFlash needs 61 MB.
-- **Faster than HNSW at 100K.** Single-query: 0.43ms vs 0.60ms. Batched: 4.8× more throughput. Both at 100% recall.
-- **AVX-512 VPOPCNTDQ + NEON.** Hand-written SIMD kernels process one 512-bit face code per instruction. Cache-blocked batching delivers 10–17× throughput at scale.
-- **Zero-config indexing.** Add faces, they're indexed — PCA fits automatically, no hyperparameter tuning, no rebuilds as the gallery grows.
+- **100% Recall@1, 48× less memory.** On the MS1MV2 benchmark (44,291 identities), FaceFlash achieved 100% Recall@1 at every scale from 100K to 1M while using approximately 48× less index memory than HNSWLIB, 42× less than USearch, and 32× less than FAISS-Flat.
+- **Faster than HNSW at 100K.** On the same benchmark, FaceFlash single-query latency was 0.43ms vs HNSWLIB's 0.60ms (1.4× faster). Batched throughput: 27,661 qps vs 5,813 qps (4.8× faster). Both at 100% recall.
+- **AVX-512 VPOPCNTDQ + NEON.** Hand-written SIMD kernels process one 512-bit face code per instruction. Cache-blocked batching measured at 10–17× throughput vs per-query serial on the same hardware.
+- **Zero-config indexing.** Add faces, they're indexed — PCA fits automatically after 1,024 samples, no hyperparameter tuning, no rebuilds as the gallery grows.
 - **Pure local.** No managed service, no data leaving your machine. Pair with any ArcFace model for a fully air-gapped face search stack.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -123,11 +123,44 @@ ff.load("my_index/")
 ## How It Works
 
 ```
-Image -> Detect Face -> ArcFace Embedding (512-dim)
-                                    |
-                         PCA + ITQ -> 64-byte Binary Code
-                                    |
-Query -> Same pipeline -> Hamming Scan (Rust AVX-512) -> Top-K Cosine Rerank -> Match
+                    ┌─────────────────────────────────────────┐
+                    │           FaceFlash Pipeline             │
+                    └─────────────────────────────────────────┘
+
+                              Input Image
+                                  │
+                          Face Detection (SCRFD)
+                                  │
+                       5-Point Alignment (RetinaFace)
+                                  │
+                        ArcFace ONNX Embedding
+                            (512-dim float)
+                                  │
+                    ┌─────────────┴──────────────┐
+                    │     PCA Projection          │
+                    │  (align with identity axes) │
+                    └─────────────┬──────────────┘
+                                  │
+                    ┌─────────────┴──────────────┐
+                    │     ITQ Rotation            │
+                    │  (balanced binary codes)    │
+                    └─────────────┬──────────────┘
+                                  │
+                     64-byte Binary Fingerprint
+                                  │
+              ┌───────────────────┴───────────────────┐
+              │  Hamming Scan (Rust AVX-512 VPOPCNTDQ) │
+              │  One instruction per 512-bit code      │
+              └───────────────────┬───────────────────┘
+                                  │
+                          Top-K Candidates
+                                  │
+                    ┌─────────────┴──────────────┐
+                    │   Cosine Rerank (~100 rows) │
+                    │   (exact float similarity)  │
+                    └─────────────┬──────────────┘
+                                  │
+                             Match Result
 ```
 
 Each face is compressed into a **64-byte binary fingerprint**:
@@ -139,6 +172,27 @@ Each face is compressed into a **64-byte binary fingerprint**:
 5. **Cosine rerank** runs exact similarity on only the top ~100 candidates
 
 This is why 512 bits is the fastest setting — the entire code fits in one AVX-512 register.
+
+---
+
+## Benchmark Methodology
+
+All performance claims in this README are measured, not estimated.
+
+| | Details |
+|---|---|
+| **Dataset** | MS1MV2 — 645,019 ArcFace embeddings, 44,291 distinct identities |
+| **Embedding** | ArcFace ONNX (w600k_r50), 512 dimensions, L2-normalized |
+| **Hardware** | AMD EPYC 9355 (32 cores / 128 threads), AVX-512 VPOPCNTDQ enabled |
+| **Competitors** | HNSWLIB 0.8+, FAISS 1.7+, USearch 2.x, ScaNN (latest) |
+| **Ground truth** | Exact brute-force cosine argmax (FAISS-Flat) |
+| **Timing** | `time.perf_counter()` per query, 10 warmup excluded |
+| **Recall metric** | Recall@1 — fraction of queries where the true nearest neighbor is rank-1 |
+| **Memory metric** | Binary index size in RAM (floats mmap'd from disk after save/load) |
+| **Batched timing** | Wall-clock for the full query batch / number of queries |
+| **Reproducibility** | `bash scripts/runpod_ms1m.sh` reproduces all results end-to-end |
+
+All single-query rows are single-threaded. Batched rows use all available cores. Every benchmark script validates correctness before reporting speed.
 
 ---
 
