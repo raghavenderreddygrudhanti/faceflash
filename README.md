@@ -111,11 +111,13 @@ USearch is faster at 99.5% recall — but uses 42× more RAM.
 
 ## Why FaceFlash Wins
 
-![Memory usage: FaceFlash vs HNSW from 100K to 1M — consistent 48x savings](docs/figures/chart_memory_scale.png)
+![Memory usage: FaceFlash vs all competitors from 100K to 1M](docs/figures/chart_memory_scale.png)
 
-![Batched throughput: FaceFlash vs HNSW from 100K to 1M](docs/figures/chart_throughput_scale.png)
+![Batched throughput: FaceFlash vs all competitors from 100K to 1M](docs/figures/chart_throughput_scale.png)
 
-![Single-query latency: FaceFlash O(N) vs HNSW O(log N) — the honest tradeoff](docs/figures/chart_latency_scale.png)
+![Single-query latency: all methods from 100K to 1M](docs/figures/chart_latency_scale.png)
+
+![Recall vs Memory at 500K: FaceFlash dominates the top-left corner](docs/figures/chart_recall_memory_scale.png)
 
 **The complete picture across scales:**
 
