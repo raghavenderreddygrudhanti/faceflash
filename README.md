@@ -1,8 +1,8 @@
 # ⚡ FaceFlash
 
-**Face search at 100% recall in 6–61 MB of RAM.**
+**Face search at 100% recall in 6–61 MB of RAM — 48× less than HNSW, 42× less than USearch, 32× less than FAISS.**
 
-Search 100K faces in 0.4ms. Search 1M faces in 61 MB (HNSW needs 2.9 GB, USearch needs 2.5 GB, FAISS needs 1.9 GB for the same recall). 4.8× faster batched throughput than HNSW. No GPU. No hyperparameter tuning. Just install and run.
+Search 100K faces in 0.4ms. Search 1M faces in 61 MB while HNSW needs 2.9 GB, USearch needs 2.5 GB, and FAISS needs 1.9 GB for the same recall. 4.8× faster batched throughput than HNSW. No GPU. No hyperparameter tuning. Just install and run.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
