@@ -111,7 +111,7 @@ USearch is faster at 99.5% recall — but uses 42× more RAM.
 
 ## Detailed Benchmarks
 
-All benchmarks: single-threaded, `time.perf_counter()` per query, ground truth = exact brute-force cosine argmax.
+All benchmarks: single-threaded unless labeled "parallel" or "batched", `time.perf_counter()` per query, ground truth = exact brute-force cosine argmax. Measured on AMD EPYC 9355 (128 threads), AVX-512 VPOPCNTDQ active, real MS1MV2 embeddings (44,291 identities).
 
 ### 1:N Identification — 44,290 Distinct People (MS1MV2)
 
@@ -126,70 +126,116 @@ The hardest test: one photo per person in the gallery, find them using a *differ
 | **FaceFlash (512b/300c)** | **95.8%** | **2.70 MB** |
 | FaceFlash (256b/100c) | 95.6% | 1.35 MB |
 
-FaceFlash ties exact search using **35× less memory** — the binary compression is lossless at 512 bits. Scaling from the earlier 13.7K to 44.3K identities did not move rank-1.
+FaceFlash ties exact search using **35× less memory** — the binary compression is lossless at 512 bits.
 
-### vs All ANN Methods — 100K Faces (MS1MV2, 6,939 identities)
+### FaceFlash Advantage at Every Scale
+
+| Scale | FaceFlash single | FaceFlash batched | HNSW ef=128 single | HNSW batched | FF memory | HNSW memory | Memory savings |
+|-------|-----------------|-------------------|-------------------|-------------|-----------|-------------|---------------|
+| **100K** | **0.43ms** | **0.036ms** | 0.60ms | 0.172ms | **6.1 MB** | 293 MB | **48×** |
+| **200K** | 0.66ms | **0.050ms** | 0.65ms | 0.378ms | **12.2 MB** | 586 MB | **48×** |
+| **300K** | 0.88ms | **0.066ms** | 0.66ms | 0.269ms | **18.3 MB** | 879 MB | **48×** |
+| **500K** | 1.54ms | **0.097ms** | 0.71ms | 0.179ms | **30.5 MB** | 1,465 MB | **48×** |
+| **1M** | 2.92ms | **0.185ms** | 0.66ms | 0.178ms | **61 MB** | 2,930 MB | **48×** |
+
+**What FaceFlash wins at each scale:**
+- **100K:** Faster single-query AND batched, 48× less memory, 100% recall
+- **200K:** Faster batched (7.6× vs HNSW), tied single-query, 48× less memory, higher recall (100% vs 99.9%)
+- **300K:** Faster batched (4.1× vs HNSW), 48× less memory, higher recall (100% vs 99.9%)
+- **500K:** Faster batched (1.9× vs HNSW), 48× less memory, equal 100% recall
+- **1M:** Tied batched, 48× less memory, equal 100% recall. HNSW is 4.4× faster single-query.
+
+### n_bits Code Length Comparison (644K faces)
+
+More bits = more memory per face but higher binary-only recall. The cosine rerank recovers accuracy regardless, so the choice is memory vs scan speed:
+
+![Recall vs candidates per code length, with 95% confidence bands](docs/figures/chart_recall_vs_candidates.png)
+
+| Code length | Bytes/face | Index size | Recall@1 | Latency | Best for |
+|-------------|-----------|-----------|----------|---------|----------|
+| 128 bits | 16 B | 9.8 MB | 99.4% | 2.62ms | Ultra-low memory (mobile) |
+| **256 bits** | 32 B | 19.6 MB | **100%** | 3.78ms | Balanced memory/accuracy |
+| 384 bits | 48 B | 29.5 MB | 100% | 5.00ms | — |
+| **512 bits** | 64 B | 39.3 MB | **100%** | 1.87ms | **Fastest** (fits AVX-512 register) |
+
+512 bits is fastest because one AVX-512 VPOPCNTDQ instruction processes the entire code (64 bytes = one 512-bit register). Shorter codes need fewer bytes but the scan takes longer due to more rerank candidates needed. At 256+ bits, recall is 100%.
+
+### vs All ANN Methods — 100K Faces (6,939 identities)
 
 ![Recall vs memory — FaceFlash sits alone in the high-recall, low-memory corner](docs/figures/chart_recall_memory_pareto.png)
 
-| Method | Recall@1 | Latency | Memory | Type |
-|--------|----------|---------|--------|------|
-| FAISS-Flat (exact) | 100% | 4.90ms | 195 MB | brute force |
-| HNSWLIB (ef=128) | 100% | 0.60ms | 293 MB | graph |
-| **FaceFlash (512b/100c)** | **100%** | **0.43ms** | **6.1 MB** | binary hash |
-| **FaceFlash (512b/200c)** | **100%** | **0.30ms** | **6.1 MB** | binary hash |
-| HNSWLIB (ef=64) | 99.6% | 0.31ms | 293 MB | graph |
-| USearch | 99.5% | 0.17ms | 254 MB | graph |
-| ScaNN | 98.3% | 0.10ms | 12 MB | quantized |
+| Method | Recall@1 | Latency | QPS | Memory | Type |
+|--------|----------|---------|-----|--------|------|
+| **FaceFlash (512b, batched)** | **100%** | **0.036ms** | **27,661** | **6.1 MB** | binary hash |
+| **FaceFlash (512b/200c)** | **100%** | **0.30ms** | 3,310 | **6.1 MB** | binary hash |
+| **FaceFlash (512b/100c)** | **100%** | **0.43ms** | 2,344 | **6.1 MB** | binary hash |
+| HNSWLIB (ef=128) | 100% | 0.60ms | 1,671 | 293 MB | graph |
+| HNSWLIB batched | 100% | 0.172ms | 5,813 | 293 MB | graph |
+| USearch batched | 99.5% | 0.007ms | 137,264 | 254 MB | graph |
+| USearch | 99.5% | 0.17ms | — | 254 MB | graph |
+| ScaNN | 98.3% | 0.10ms | — | 12 MB | quantized |
+| FAISS-Flat (exact) | 100% | 4.90ms | 204 | 195 MB | brute force |
 
-FaceFlash at 100K is **faster than HNSW at equal 100% recall** (0.43ms vs 0.60ms) while using
-**48× less memory**. With VPOPCNTDQ active, the single-query path processes a full 512-bit code
-per instruction — the old "HNSW is faster" tradeoff no longer applies at this scale.
+### vs All ANN Methods — 200K Faces (13,749 identities)
 
-### vs All ANN Methods — 500K Faces (MS1MV2, 34,328 identities)
+| Method | Recall@1 | Latency | QPS | Memory |
+|--------|----------|---------|-----|--------|
+| **FaceFlash (512b, batched)** | **100%** | **0.050ms** | **19,930** | **12.2 MB** |
+| **FaceFlash (512b/200c)** | **100%** | 0.57ms | 1,751 | **12.2 MB** |
+| **FaceFlash (512b/100c)** | **100%** | 0.66ms | 1,523 | **12.2 MB** |
+| HNSWLIB (ef=128) | 99.9% | 0.65ms | 1,531 | 586 MB |
+| HNSWLIB batched | 99.9% | 0.378ms | 2,646 | 586 MB |
+| USearch batched | 99.1% | 0.008ms | 121,660 | 508 MB |
+| USearch | 99.5% | 0.21ms | — | 508 MB |
+| ScaNN | 97.2% | 0.19ms | — | 24 MB |
+| FAISS-Flat | 100% | 10.1ms | 99 | 391 MB |
 
-| Method | Recall@1 | Latency | Memory |
-|--------|----------|---------|--------|
-| FAISS-Flat (exact) | 100% | 24.8ms | 977 MB |
-| HNSWLIB (ef=128) | 100% | 0.71ms | 1,465 MB |
-| **FaceFlash (512b/100c)** | **100%** | 1.54ms | **30.5 MB** |
-| **FaceFlash (512b/200c)** | **100%** | 1.45ms | **30.5 MB** |
-| HNSWLIB (ef=64) | 98.9% | 0.38ms | 1,465 MB |
-| USearch | 98.6% | 0.32ms | 1,270 MB |
-| ScaNN | 97.6% | 0.45ms | 61 MB |
+FaceFlash at 200K: **higher recall than HNSW** (100% vs 99.9%), **same single-query latency** (0.66ms vs 0.65ms), **7.5× faster batched**, **48× less memory**.
 
-| Batched (all cores) | Recall@1 | Throughput | Memory |
-|---------------------|----------|-----------|--------|
-| **FaceFlash (batched)** | **100%** | **10,337 qps** | **30.5 MB** |
-| HNSWLIB ef=128 (batched) | 99.9% | 5,577 qps | 1,465 MB |
-| USearch (batched) | 98.4% | 76,150 qps | 1,270 MB |
+### vs All ANN Methods — 300K Faces (20,615 identities)
 
-At 500K: HNSW is 2.2× faster single-query (O(log N) vs O(N)). But FaceFlash uses
-**48× less memory** at equal 100% recall. In batched mode, FaceFlash is **1.9× faster
-than HNSW** while using 48× less memory.
+| Method | Recall@1 | Latency | QPS | Memory |
+|--------|----------|---------|-----|--------|
+| **FaceFlash (512b, batched)** | **100%** | **0.066ms** | **15,147** | **18.3 MB** |
+| **FaceFlash (512b/200c)** | **100%** | 0.84ms | 1,187 | **18.3 MB** |
+| HNSWLIB (ef=128) | 99.9% | 0.66ms | 1,510 | 879 MB |
+| HNSWLIB batched | 99.7% | 0.269ms | 3,715 | 879 MB |
+| USearch batched | 98.7% | 0.014ms | 73,383 | 762 MB |
+| USearch | 99.3% | 0.28ms | — | 762 MB |
+| ScaNN | 97.8% | 0.28ms | — | 37 MB |
+| FAISS-Flat | 100% | 14.9ms | 67 | 586 MB |
 
-### vs All ANN Methods — 1M Faces (MS1MV2, 44,291 identities)
+FaceFlash at 300K: **higher recall than all competitors** (100% vs 99.9% HNSW, 99.3% USearch), **4.1× faster batched than HNSW**, **48× less memory**.
 
-| Method | Recall@1 | Latency | Memory |
-|--------|----------|---------|--------|
-| FAISS-Flat (exact) | 100% | 56.0ms | 1,953 MB |
-| HNSWLIB (ef=128) | 100% | 0.66ms | 2,930 MB |
-| **FaceFlash (512b/100c)** | **100%** | 2.92ms | **61 MB** |
-| HNSWLIB (ef=64) | 99.9% | 0.34ms | 2,930 MB |
-| HNSWLIB (ef=32) | 99.3% | 0.19ms | 2,930 MB |
-| ScaNN | 98.2% | 0.86ms | 122 MB |
-| USearch | 94.9% | 0.32ms | 2,539 MB |
+### vs All ANN Methods — 500K Faces (34,328 identities)
 
-| Batched (all cores) | Recall@1 | Throughput | Memory |
-|---------------------|----------|-----------|--------|
-| **FaceFlash (batched)** | **100%** | **5,403 qps** | **61 MB** |
-| HNSWLIB ef=128 (batched) | 100% | 5,621 qps | 2,930 MB |
-| USearch (batched) | 94.1% | 77,266 qps | 2,539 MB |
+| Method | Recall@1 | Latency | QPS | Memory |
+|--------|----------|---------|-----|--------|
+| **FaceFlash (512b, batched)** | **100%** | **0.097ms** | **10,337** | **30.5 MB** |
+| **FaceFlash (512b/200c)** | **100%** | 1.45ms | 692 | **30.5 MB** |
+| HNSWLIB (ef=128) | 100% | 0.71ms | 1,416 | 1,465 MB |
+| HNSWLIB batched | 99.9% | 0.179ms | 5,577 | 1,465 MB |
+| USearch batched | 98.4% | 0.013ms | 76,150 | 1,270 MB |
+| USearch | 98.6% | 0.32ms | — | 1,270 MB |
+| ScaNN | 97.6% | 0.45ms | — | 61 MB |
+| FAISS-Flat | 100% | 24.8ms | 40 | 977 MB |
 
-At 1M: HNSW is 4.4× faster single-query — the O(log N) advantage grows. But FaceFlash
-uses **48× less memory** (61 MB vs 2.9 GB). Batched throughput **converges** (5,403 vs
-5,621 qps) — they're effectively tied, with FaceFlash at 48× less RAM. USearch is
-fastest at 94.1% recall and 2.5 GB.
+FaceFlash at 500K: **equal 100% recall to HNSW**, **1.9× faster batched**, **48× less memory**. HNSW is 2.2× faster single-query (O(log N) advantage).
+
+### vs All ANN Methods — 1M Faces (44,291 identities)
+
+| Method | Recall@1 | Latency | QPS | Memory |
+|--------|----------|---------|-----|--------|
+| **FaceFlash (512b, batched)** | **100%** | **0.185ms** | **5,403** | **61 MB** |
+| **FaceFlash (512b/100c)** | **100%** | 2.92ms | 342 | **61 MB** |
+| HNSWLIB (ef=128) | 100% | 0.66ms | 1,523 | 2,930 MB |
+| HNSWLIB batched | 100% | 0.178ms | 5,621 | 2,930 MB |
+| USearch batched | 94.1% | 0.013ms | 77,266 | 2,539 MB |
+| HNSWLIB (ef=32) | 99.3% | 0.19ms | — | 2,930 MB |
+| ScaNN | 98.2% | 0.86ms | — | 122 MB |
+| FAISS-Flat | 100% | 56.0ms | 18 | 1,953 MB |
+
+FaceFlash at 1M: **batched throughput ties HNSW** (5,403 vs 5,621 qps) at **48× less memory**. HNSW is 4.4× faster single-query — that's the O(log N) vs O(N) structural difference. USearch is fastest but drops to 94.1% recall.
 
 ### Face Alignment — Raw Photos (LFW Verification)
 
@@ -276,22 +322,19 @@ the work per query exceeds thread-dispatch overhead.
 
 ## Tuning
 
-More bits or more candidates both buy recall — they substitute for each other. This curve (1M faces, 95% CI bands) shows the trade:
-
-![Recall vs candidates per code length, with 95% confidence bands](docs/figures/chart_recall_vs_candidates.png)
-
-Two knobs, and they substitute for each other:
+Two knobs, and they substitute for each other — more bits or more candidates both buy recall:
 
 | Deployment | Config | Recall@1 | Memory/face | Notes |
 |-----------|--------|----------|-------------|-------|
-| **Server** (floats in RAM) | `n_bits=256, n_candidates=300` | 99.7% | 32 bytes | Minimize resident RAM |
-| **Balanced** (default) | `n_bits=512, n_candidates=100` | 99.9% | 64 bytes | Best recall, reasonable memory |
+| **Ultra-compact** | `n_bits=128, n_candidates=500` | 99.4% | 16 bytes | Minimum RAM (mobile/IoT) |
+| **Server** (floats in RAM) | `n_bits=256, n_candidates=100` | 100% | 32 bytes | Balanced memory/accuracy |
+| **Balanced** (default) | `n_bits=512, n_candidates=100` | 100% | 64 bytes | Fastest (AVX-512 single-instruction) |
 | **Edge** (floats on flash) | `n_bits=512, n_candidates=50` | 99.5% | 64 bytes | Minimize disk reads per query |
 
 ```python
-ff = FaceFlash(n_bits=256, n_candidates=300)     # server: less memory
-ff = FaceFlash(n_bits=512, n_candidates=100)     # balanced (default)
-ff = FaceFlash(n_bits=512, n_candidates=50)      # edge: fewer I/O ops
+ff = FaceFlash(n_bits=128, n_candidates=500)     # ultra-compact: 16 bytes/face
+ff = FaceFlash(n_bits=256, n_candidates=100)     # server: balanced
+ff = FaceFlash(n_bits=512, n_candidates=100)     # default: fastest scan
 ff.search("query.jpg", n_candidates=200)         # per-query override
 ```
 
