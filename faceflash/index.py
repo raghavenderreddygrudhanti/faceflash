@@ -165,7 +165,7 @@ class FaceIndex:
                n_probe: Optional[int] = None) -> List[Tuple[str, float, int]]:
         """
         Two-phase search: Hamming filter → cosine rerank.
-        Uses Rust backend when available (50x faster).
+        Uses the Rust SIMD backend when available (much faster than NumPy).
 
         n_candidates is the search-effort knob, independent of k (the result
         count). More candidates → higher recall + more float reranks. Defaults

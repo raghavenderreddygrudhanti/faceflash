@@ -135,8 +135,8 @@ class PCABinaryQuantizer:
         """
         Two-phase search: Hamming filter → cosine rerank.
 
-        Uses Rust backend for Hamming computation when available (50x faster).
-        Falls back to NumPy popcount table otherwise.
+        Uses the Rust SIMD backend for Hamming computation when available (much
+        faster than the NumPy fallback). Falls back to a NumPy popcount table.
 
         Args:
             query: (dim,) float32 normalized embedding
@@ -195,5 +195,5 @@ _POPCOUNT_TABLE = np.array([bin(i).count('1') for i in range(256)], dtype=np.int
 def backend_info() -> str:
     """Return which search backend is active."""
     if _HAS_RUST:
-        return "faceflash_core (Rust, POPCNT-accelerated)"
-    return "NumPy (fallback — install faceflash-core for 50x faster search)"
+        return "faceflash._core (Rust, SIMD-accelerated)"
+    return "NumPy (fallback — Rust backend not built; reinstall from a wheel for SIMD search)"

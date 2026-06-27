@@ -15,10 +15,10 @@ from faceflash.index import FaceIndex
 
 class FaceFlash:
     """
-    FaceFlash — Fast face retrieval via PCA+ITQ binary quantization.
+    FaceFlash — memory-efficient face retrieval via PCA+ITQ binary quantization.
 
-    ~10x faster than DeepFace/InsightFace search. 48x less committed memory
-    than HNSW at equal recall. Best at 10K–100K scale.
+    100% Recall@1 (matching exact search) at 48-96x less memory than HNSW,
+    measured on MS1MV2 from 100K to 1M faces. CPU-only, SIMD-accelerated.
 
     Usage:
         ff = FaceFlash()
