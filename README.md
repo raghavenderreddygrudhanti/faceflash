@@ -1,8 +1,9 @@
 # ⚡ FaceFlash
 
-**Search 1 million faces in under 3ms — in 61 MB of RAM.**
+**Face search at 100% recall in 6–61 MB of RAM.**
 
-No GPU. No training. No cloud dependency. Just install and run.
+Search 100K faces in 0.4ms. Search 1M faces in 61 MB (HNSW needs 2.9 GB for the same recall).
+No GPU. No hyperparameter tuning. Just install and run.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
@@ -43,8 +44,8 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 | **Memory @ 500K** | **30.5 MB** | 1,465 MB | 1,270 MB | 61 MB | 977 MB |
 | **Memory @ 1M** | **61 MB** | 2,930 MB | 2,539 MB | 122 MB | 1,953 MB |
 | **Latency @ 100K** | 0.43ms | 0.60ms | 0.17ms | 0.10ms | 4.90ms |
-| **Batched QPS @ 100K** | **27,661** | 5,813 | 137,264 | — | — |
-| **Training required** | **No** | Yes | Yes | Yes | No |
+| **Batched QPS @ 100K** | 27,661 | 5,813 | **137,264** | — | — |
+| **Index build** | Auto (PCA fit) | Build graph | Build graph | Partition | None |
 
 > Tested on MS1MV2 (44,291 identities, 645,019 embeddings). Hardware: AMD EPYC 9355, 128 threads, AVX-512 active.
 
@@ -323,41 +324,53 @@ bash scripts/runpod_ms1m.sh   # FORCE_EXTRACT=1 for full 85K extraction
 ## Roadmap
 
 **v0.1.0 (current)**
-- PCA+ITQ binary quantization + Rust search backend
-- High-level API: register, search, verify
-- Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K-1M
-- 1:N identification on 44,290 distinct identities (MS1MV2)
-- 5-point alignment via SCRFD/RetinaFace — 99.85% LFW accuracy
+- [x] PCA+ITQ binary quantization + Rust search backend
+- [x] High-level API: register, search, verify
+- [x] Benchmarked against FAISS, HNSWLIB, USearch, ScaNN at 100K-1M
+- [x] 1:N identification on 44,290 distinct identities (MS1MV2)
+- [x] 5-point alignment via SCRFD/RetinaFace — 99.85% LFW accuracy
 
-**v0.2.0 — production quality**
-- Prebuilt wheels (pip install faceflash)
-- Full 85K-identity benchmark suite
+**v0.2.0 (done)**
+- [x] Prebuilt wheels (`pip install faceflash`)
+- [x] Full 85K-identity benchmark (76,872 identities extracted, 44,291 with sufficient data)
+- [x] On-device memory measurement (6.1 MB binary index @100K)
 
-**v0.3.0 — performance**
-- IVF coarse clustering (2.7-4.9x speedup at scale)
-- Full AVX-512 VPOPCNTDQ + NEON ARM kernels
-- Cache-blocked batched search (17x throughput at 500K-1M)
+**v0.3.0 (done)**
+- [x] IVF coarse clustering (2.7-4.9x speedup at scale)
+- [x] AVX-512 VPOPCNTDQ — native 512-bit popcount (3.5x faster than scalar)
+- [x] Cache-blocked batched search (17x throughput at 500K-1M)
+- [x] NEON kernels — ARM-optimized (vcntq_u8)
 
-**v1.0.0 — stable**
-- Stable public API
-- DiskANN comparison
-- Mobile deployment (ONNX + CoreML)
-- Streaming insertion (no PCA refit required)
+**v1.0.0 — next**
+- [ ] Stable public API (no breaking changes)
+- [ ] DiskANN comparison
+- [ ] Mobile deployment (ONNX + CoreML)
+- [ ] Streaming insertion (add faces without refitting PCA)
 
 ---
 
 ## Contributing
 
-Contributions welcome — especially:
+```bash
+# Dev setup (one command)
+git clone https://github.com/raghavenderreddygrudhanti/faceflash.git
+cd faceflash && python -m venv .venv && source .venv/bin/activate
+pip install -e ".[cpu,benchmark]" && maturin develop --release
+python -m pytest tests/  # 33 tests, ~17s
+```
 
-- **DiskANN comparison** — the one major competitor not yet benchmarked
-- **Mobile deployment** — ONNX + CoreML for iOS/Android
-- **Streaming insertion** — add faces without refitting PCA
-- **GPU batched search** — CUDA kernel for 10M+ galleries
-- **Raspberry Pi / Jetson benchmarks** — real edge numbers
-- **WebAssembly build** — browser-based face search
+Open areas for contribution:
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
+| Area | Difficulty | Impact |
+|------|-----------|--------|
+| **DiskANN comparison** | Medium | High — the one competitor missing |
+| **Mobile deployment** (ONNX + CoreML) | Medium | High — iOS/Android face search |
+| **Streaming insertion** (no PCA refit) | Hard | High — online learning |
+| **GPU batched search** (CUDA) | Hard | Medium — 10M+ galleries |
+| **Raspberry Pi / Jetson benchmarks** | Easy | Medium — edge credibility |
+| **WebAssembly build** | Medium | Medium — browser face search |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for coding guidelines.
 
 ---
 
