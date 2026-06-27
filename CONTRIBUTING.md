@@ -2,31 +2,21 @@
 
 Thanks for your interest. Here's how to get started.
 
-## Dev Setup
+## Dev Setup (one command)
 
 ```bash
-# Clone
 git clone https://github.com/raghavenderreddygrudhanti/faceflash.git
 cd faceflash
-
-# Python environment
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,benchmark]"
 
-# Rust backend (optional but recommended — 50x faster)
-# Requires Rust toolchain: https://rustup.rs
-cd rust && maturin develop --release && cd ..
+# Build the Rust AVX-512/NEON backend (requires Rust toolchain: https://rustup.rs)
+maturin develop --release
 
 # Verify
-python -c "import faceflash; print(faceflash.__version__)"
-python -c "import faceflash_core; print('Rust backend OK')"
-```
-
-## Running Tests
-
-```bash
-pytest tests/ -v
+python -c "from faceflash import FaceFlash; print('OK')"
+python -c "from faceflash._core import simd_info; print(simd_info())"
+pytest tests/ -v   # 36 tests, ~19s
 ```
 
 ## Running Benchmarks
@@ -36,26 +26,30 @@ pytest tests/ -v
 python scripts/extract_lfw_embeddings.py
 
 # Quick local benchmark
-python benchmarks/bench_search.py
-
-# Full ANN comparison (needs faiss, hnswlib, usearch)
 python benchmarks/bench_ann_comparison.py --scales 100K --queries 500
+
+# Full suite on RunPod (MS1MV2, all scales)
+bash scripts/runpod_ms1m.sh
 ```
 
 ## Code Style
 
-- Python: keep it readable, type-hinted, docstrings on public methods
+- Python: type-hinted, docstrings on public methods, match existing patterns
 - Rust: `cargo fmt` and `cargo clippy` clean
-- No linter enforced yet — just match the existing style
+- No strict linter enforced — just keep it consistent with what's there
 
 ## What to Work On
 
-Check the [README contributing section](README.md#contributing) for the roadmap.
-The highest-impact items:
-
-1. **RetinaFace alignment** — replace Haar cascade with proper 5-point face alignment
-2. **Prebuilt wheels** — set up maturin CI to ship Rust in the pip package
-3. **Coarse clustering** — partition codes into buckets for sub-linear scan
+| Area | Difficulty | Impact |
+|------|-----------|--------|
+| **DiskANN comparison** | Medium | High — the one competitor missing |
+| **Mobile deployment** (ONNX + CoreML) | Medium | High — iOS/Android face search |
+| **Streaming insertion** (no PCA refit) | Hard | High — online learning |
+| **GPU batched search** (CUDA) | Hard | Medium — 10M+ galleries |
+| **Raspberry Pi / Jetson benchmarks** | Easy | Medium — edge credibility |
+| **REST API server** (FastAPI) | Medium | High — production deployment |
+| **Liveness detection** | Medium | High — anti-spoofing |
+| **WebAssembly build** | Medium | Medium — browser face search |
 
 ## Pull Requests
 
