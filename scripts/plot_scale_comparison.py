@@ -1,4 +1,4 @@
-"""Generate multi-scale comparison charts: FaceFlash vs ALL competitors 100K-1M."""
+"""Generate polished multi-scale comparison charts: FaceFlash vs ALL competitors."""
 import json
 import matplotlib.pyplot as plt
 import matplotlib
@@ -6,6 +6,7 @@ import numpy as np
 from pathlib import Path
 
 matplotlib.use('Agg')
+plt.rcParams.update({'font.size': 11, 'axes.titlesize': 14, 'axes.labelsize': 12})
 
 RESULTS = Path(__file__).parent.parent / "results"
 FIGURES = Path(__file__).parent.parent / "docs" / "figures"
@@ -16,129 +17,162 @@ with open(RESULTS / "bench_ann_comparison_ms1m.json") as f:
 
 scales_order = ["100K", "200K", "300K", "500K", "1M"]
 
-# Define methods to track (name pattern → display label, color, marker)
-METHODS = {
-    "FaceFlash (512b/100c)": {"label": "FaceFlash (single)", "color": "#0d9488", "marker": "o", "ls": "-"},
-    "FaceFlash (512b/100c, batched)": {"label": "FaceFlash (batched)", "color": "#2dd4bf", "marker": "D", "ls": "-"},
-    "HNSWLIB (ef=128)": {"label": "HNSW ef=128", "color": "#6366f1", "marker": "s", "ls": "--"},
-    "HNSWLIB (ef=128, batched)": {"label": "HNSW batched", "color": "#a5b4fc", "marker": "s", "ls": ":"},
-    "USearch (HNSW)": {"label": "USearch", "color": "#f59e0b", "marker": "^", "ls": "--"},
-    "ScaNN": {"label": "ScaNN", "color": "#ef4444", "marker": "v", "ls": "--"},
-    "FAISS-IVF (nprobe=64)": {"label": "FAISS-IVF", "color": "#8b5cf6", "marker": "P", "ls": "--"},
+# Vibrant, distinct colors
+COLORS = {
+    "FaceFlash": "#10b981",       # emerald green
+    "FaceFlash_batch": "#06d6a0", # bright teal
+    "HNSW": "#6366f1",            # indigo
+    "HNSW_batch": "#a78bfa",      # light purple
+    "USearch": "#f59e0b",         # amber
+    "ScaNN": "#ef4444",           # red
+    "FAISS-IVF": "#8b5cf6",       # violet
+    "FAISS-Flat": "#94a3b8",      # gray
 }
 
+
 def find_method(methods_list, pattern):
-    """Find a method by exact or partial match."""
-    # Try exact match first
     for m in methods_list:
         if m["method"] == pattern:
             return m
-    # Partial match for ScaNN (has varying leaf counts)
-    for m in methods_list:
-        if pattern.lower() in m["method"].lower() and pattern.lower() != "faceflash":
-            return m
+    # Partial for ScaNN
+    if "ScaNN" in pattern:
+        for m in methods_list:
+            if "ScaNN" in m["method"]:
+                return m
     return None
 
-# Collect data per method per scale
-results = {k: {"latency": [], "memory": [], "recall": [], "qps": []} for k in METHODS}
-valid_scales = []
 
-for scale in scales_order:
-    if scale not in data["scales"]:
-        continue
-    valid_scales.append(scale)
-    methods_list = data["scales"][scale]["methods"]
-
-    for key, meta in METHODS.items():
-        m = find_method(methods_list, key)
+def collect_across_scales(method_key):
+    """Collect latency, memory, recall, qps across scales for one method."""
+    lat, mem, rec, qps_list = [], [], [], []
+    found_scales = []
+    for scale in scales_order:
+        if scale not in data["scales"]:
+            continue
+        m = find_method(data["scales"][scale]["methods"], method_key)
         if m:
-            results[key]["latency"].append(m.get("latency_mean_ms", 0))
-            results[key]["memory"].append(m.get("memory_mb", 0))
-            results[key]["recall"].append(m.get("recall_at_1", 0) * 100)
-            results[key]["qps"].append(m.get("qps", 0))
-        else:
-            results[key]["latency"].append(None)
-            results[key]["memory"].append(None)
-            results[key]["recall"].append(None)
-            results[key]["qps"].append(None)
+            lat.append(m.get("latency_mean_ms", 0))
+            mem.append(m.get("memory_mb", 0))
+            rec.append(m.get("recall_at_1", 0) * 100)
+            qps_list.append(m.get("qps", 0))
+            found_scales.append(scale)
+    return found_scales, lat, mem, rec, qps_list
 
-x = np.arange(len(valid_scales))
 
-# --- Chart 1: Memory comparison (bar chart, all competitors) ---
-fig, ax = plt.subplots(figsize=(12, 6))
-mem_methods = ["FaceFlash (512b/100c)", "ScaNN", "HNSWLIB (ef=128)", "USearch (HNSW)", "FAISS-IVF (nprobe=64)"]
-n_bars = len(mem_methods)
-width = 0.15
-offsets = np.arange(n_bars) - (n_bars - 1) / 2
+# ═══════════════════════════════════════════════════════════════════════════
+# Chart 1: Memory (horizontal bar at 500K, all methods, with recall labels)
+# ═══════════════════════════════════════════════════════════════════════════
+fig, ax = plt.subplots(figsize=(11, 5))
+target = "500K"
+methods_500k = data["scales"][target]["methods"]
 
-for i, key in enumerate(mem_methods):
-    meta = METHODS[key]
-    vals = [v if v else 0 for v in results[key]["memory"]]
-    bars = ax.bar(x + offsets[i] * width, vals, width, label=meta["label"], color=meta["color"], alpha=0.85)
+# Pick representative methods
+bar_data = []
+for name, color in [
+    ("FaceFlash (512b/100c)", COLORS["FaceFlash"]),
+    ("FaceFlash (256b/300c)", COLORS["FaceFlash_batch"]),
+    ("ScaNN", COLORS["ScaNN"]),
+    ("FAISS-IVF (nprobe=64)", COLORS["FAISS-IVF"]),
+    ("USearch (HNSW)", COLORS["USearch"]),
+    ("HNSWLIB (ef=128)", COLORS["HNSW"]),
+    ("FAISS-Flat (exact)", COLORS["FAISS-Flat"]),
+]:
+    m = find_method(methods_500k, name)
+    if m:
+        bar_data.append((m["method"].replace(" (HNSW)", ""), m["memory_mb"],
+                         m["recall_at_1"] * 100, color))
 
-ax.set_xlabel('Database Scale', fontsize=11)
-ax.set_ylabel('Memory (MB, log scale)', fontsize=11)
-ax.set_title('Index Memory: FaceFlash vs All Competitors (100K to 1M)\nAll at their best recall configuration', fontsize=13, fontweight='bold')
-ax.set_xticks(x)
-ax.set_xticklabels(valid_scales)
-ax.set_yscale('log')
-ax.legend(loc='upper left', fontsize=9)
-ax.grid(axis='y', alpha=0.3)
+bar_data.sort(key=lambda x: x[1])  # sort by memory ascending
+
+labels = [d[0] for d in bar_data]
+mems = [d[1] for d in bar_data]
+recalls = [d[2] for d in bar_data]
+colors = [d[3] for d in bar_data]
+
+y_pos = np.arange(len(labels))
+bars = ax.barh(y_pos, mems, color=colors, edgecolor='white', height=0.6)
+
+for i, (mem, recall) in enumerate(zip(mems, recalls)):
+    label = f"  {mem:.0f} MB   R@1={recall:.1f}%"
+    ax.text(mem + 15, i, label, va='center', fontsize=10, fontweight='bold')
+
+ax.set_yticks(y_pos)
+ax.set_yticklabels(labels, fontsize=11)
+ax.set_xlabel('Memory (MB) — lower is better')
+ax.set_title(f'Index Memory at {target} Faces (All Competitors)\nFaceFlash: 30 MB at 100% recall vs HNSW: 1,465 MB', fontweight='bold')
+ax.set_xlim(0, max(mems) * 1.35)
+ax.grid(axis='x', alpha=0.2)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
 plt.tight_layout()
 plt.savefig(FIGURES / "chart_memory_scale.png", dpi=150, bbox_inches='tight')
 plt.savefig(FIGURES / "chart_memory_scale.svg", bbox_inches='tight')
 plt.close()
-print("  Saved: chart_memory_scale.png")
+print("  Saved: chart_memory_scale.png (500K horizontal bar)")
 
-# --- Chart 2: Single-query latency (line chart, all competitors) ---
+# ═══════════════════════════════════════════════════════════════════════════
+# Chart 2: Latency across scales (line, all methods)
+# ═══════════════════════════════════════════════════════════════════════════
 fig, ax = plt.subplots(figsize=(11, 6))
-latency_methods = ["FaceFlash (512b/100c)", "HNSWLIB (ef=128)", "USearch (HNSW)", "ScaNN", "FAISS-IVF (nprobe=64)"]
 
-for key in latency_methods:
-    meta = METHODS[key]
-    vals = results[key]["latency"]
-    # Filter out None
-    xs = [valid_scales[i] for i in range(len(vals)) if vals[i] is not None]
-    ys = [v for v in vals if v is not None]
-    ax.plot(xs, ys, marker=meta["marker"], linestyle=meta["ls"], color=meta["color"],
-            linewidth=2, markersize=8, label=meta["label"])
+plot_methods = [
+    ("FaceFlash (512b/100c)", "FaceFlash", COLORS["FaceFlash"], "o", "-", 2.5),
+    ("HNSWLIB (ef=128)", "HNSW ef=128", COLORS["HNSW"], "s", "--", 2),
+    ("USearch (HNSW)", "USearch", COLORS["USearch"], "^", "--", 2),
+    ("FAISS-IVF (nprobe=64)", "FAISS-IVF", COLORS["FAISS-IVF"], "P", "--", 1.5),
+    ("ScaNN", "ScaNN", COLORS["ScaNN"], "v", "--", 1.5),
+]
 
-ax.set_xlabel('Database Scale', fontsize=11)
-ax.set_ylabel('Latency (ms, log scale)', fontsize=11)
-ax.set_title('Single-Query Latency: All Methods (100K to 1M)\nLower is better — FaceFlash is O(N), graph methods are O(log N)', fontsize=13, fontweight='bold')
-ax.set_yscale('log')
-ax.legend(fontsize=9)
+for key, label, color, marker, ls, lw in plot_methods:
+    scales, lat, _, _, _ = collect_across_scales(key)
+    if scales:
+        ax.plot(scales, lat, marker=marker, linestyle=ls, color=color,
+                linewidth=lw, markersize=9, label=label)
+
+ax.set_xlabel('Database Scale')
+ax.set_ylabel('Latency (ms)')
+ax.set_title('Single-Query Latency Across Scales (All Competitors)\nFaceFlash is O(N) linear scan; graph methods are O(log N)', fontweight='bold')
+ax.legend(fontsize=10, loc='upper left')
 ax.grid(alpha=0.3)
+ax.set_ylim(bottom=0)
+
+# Annotate FaceFlash win at 100K
+ax.annotate('FaceFlash\nfaster here', xy=(0, 0.43), xytext=(0.5, 1.5),
+            fontsize=9, color=COLORS["FaceFlash"], fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color=COLORS["FaceFlash"]))
+
 plt.tight_layout()
 plt.savefig(FIGURES / "chart_latency_scale.png", dpi=150, bbox_inches='tight')
 plt.savefig(FIGURES / "chart_latency_scale.svg", bbox_inches='tight')
 plt.close()
 print("  Saved: chart_latency_scale.png")
 
-# --- Chart 3: Batched throughput (all that have it) ---
+# ═══════════════════════════════════════════════════════════════════════════
+# Chart 3: Throughput (QPS) across scales — batched + single
+# ═══════════════════════════════════════════════════════════════════════════
 fig, ax = plt.subplots(figsize=(11, 6))
-batch_methods = ["FaceFlash (512b/100c, batched)", "HNSWLIB (ef=128, batched)"]
 
-for key in batch_methods:
-    meta = METHODS[key]
-    vals = results[key]["qps"]
-    xs = [valid_scales[i] for i in range(len(vals)) if vals[i] is not None and vals[i] > 0]
-    ys = [v for v in vals if v is not None and v > 0]
-    ax.plot(xs, ys, marker=meta["marker"], linestyle=meta["ls"], color=meta["color"],
-            linewidth=2.5, markersize=10, label=meta["label"])
+throughput_methods = [
+    ("FaceFlash (512b/100c, batched)", "FaceFlash BATCHED", COLORS["FaceFlash"], "D", "-", 3),
+    ("HNSWLIB (ef=128, batched)", "HNSW BATCHED", COLORS["HNSW_batch"], "s", "-", 2.5),
+    ("FaceFlash (512b/100c)", "FaceFlash (single)", COLORS["FaceFlash"], "o", ":", 1.5),
+    ("HNSWLIB (ef=128)", "HNSW (single)", COLORS["HNSW"], "s", ":", 1.5),
+    ("USearch (HNSW)", "USearch (single)", COLORS["USearch"], "^", ":", 1.5),
+    ("ScaNN", "ScaNN (single)", COLORS["ScaNN"], "v", ":", 1.5),
+]
 
-# Also add single-query methods for context
-for key in ["HNSWLIB (ef=128)", "USearch (HNSW)", "ScaNN"]:
-    meta = METHODS[key]
-    vals = results[key]["qps"]
-    xs = [valid_scales[i] for i in range(len(vals)) if vals[i] is not None and vals[i] > 0]
-    ys = [v for v in vals if v is not None and v > 0]
-    ax.plot(xs, ys, marker=meta["marker"], linestyle=meta["ls"], color=meta["color"],
-            linewidth=1.5, markersize=6, alpha=0.7, label=f"{meta['label']} (single)")
+for key, label, color, marker, ls, lw in throughput_methods:
+    scales, _, _, _, qps_list = collect_across_scales(key)
+    qps_valid = [(s, q) for s, q in zip(scales, qps_list) if q > 0]
+    if qps_valid:
+        sx, sy = zip(*qps_valid)
+        ax.plot(sx, sy, marker=marker, linestyle=ls, color=color,
+                linewidth=lw, markersize=8 if lw > 2 else 6, label=label,
+                alpha=1.0 if lw > 2 else 0.7)
 
-ax.set_xlabel('Database Scale', fontsize=11)
-ax.set_ylabel('Throughput (queries/sec)', fontsize=11)
-ax.set_title('Throughput: FaceFlash Batched vs All Competitors (100K to 1M)\nHigher is better — batched lines are thick, single-query are thin', fontsize=12, fontweight='bold')
+ax.set_xlabel('Database Scale')
+ax.set_ylabel('Throughput (queries/sec, log scale)')
+ax.set_title('Throughput: FaceFlash Batched vs All (100K to 1M)\nBold = batched (all cores), dotted = single-query', fontweight='bold')
 ax.set_yscale('log')
 ax.legend(fontsize=9, loc='upper right')
 ax.grid(alpha=0.3)
@@ -148,19 +182,11 @@ plt.savefig(FIGURES / "chart_throughput_scale.svg", bbox_inches='tight')
 plt.close()
 print("  Saved: chart_throughput_scale.png")
 
-# --- Chart 4: Recall vs Memory (scatter, all scales combined, latest = 500K) ---
+# ═══════════════════════════════════════════════════════════════════════════
+# Chart 4: Recall vs Memory scatter at 500K (all methods, colorful)
+# ═══════════════════════════════════════════════════════════════════════════
 fig, ax = plt.subplots(figsize=(11, 6))
-# Use 500K scale for this (real data, meaningful scale)
-target_scale = "500K" if "500K" in data["scales"] else valid_scales[-1]
-methods_500k = data["scales"][target_scale]["methods"]
-
-colors_map = {
-    "FaceFlash": "#0d9488",
-    "HNSWLIB": "#6366f1",
-    "USearch": "#f59e0b",
-    "ScaNN": "#ef4444",
-    "FAISS": "#8b5cf6",
-}
+methods_500k = data["scales"]["500K"]["methods"]
 
 for m in methods_500k:
     name = m["method"]
@@ -169,33 +195,81 @@ for m in methods_500k:
     if memory == 0 or recall < 85:
         continue
 
-    # Determine color
-    color = "#94a3b8"
-    for prefix, c in colors_map.items():
-        if prefix in name:
-            color = c
-            break
+    # Color by family
+    if "FaceFlash" in name:
+        color = COLORS["FaceFlash"]
+        size = 180
+        alpha = 1.0
+        zorder = 10
+    elif "HNSW" in name:
+        color = COLORS["HNSW"]
+        size = 90
+        alpha = 0.8
+        zorder = 5
+    elif "USearch" in name:
+        color = COLORS["USearch"]
+        size = 90
+        alpha = 0.8
+        zorder = 5
+    elif "ScaNN" in name:
+        color = COLORS["ScaNN"]
+        size = 90
+        alpha = 0.8
+        zorder = 5
+    elif "FAISS-IVF" in name:
+        color = COLORS["FAISS-IVF"]
+        size = 70
+        alpha = 0.7
+        zorder = 4
+    elif "FAISS-Flat" in name:
+        color = COLORS["FAISS-Flat"]
+        size = 70
+        alpha = 0.6
+        zorder = 3
+    else:
+        color = "#cbd5e1"
+        size = 50
+        alpha = 0.5
+        zorder = 2
 
-    size = 120 if "FaceFlash" in name else 60
-    alpha = 1.0 if "FaceFlash" in name else 0.7
-    ax.scatter(memory, recall, s=size, c=color, alpha=alpha, edgecolors='white', linewidths=0.5)
+    ax.scatter(memory, recall, s=size, c=color, alpha=alpha, edgecolors='white',
+               linewidths=1, zorder=zorder)
 
     # Label key points
-    if any(k in name for k in ["512b/100c", "ef=128", "USearch (HNSW)", "ScaNN"]) and "parallel" not in name and "batched" not in name:
-        short = name.split("(")[0].strip() if "FaceFlash" not in name else "FaceFlash"
-        ax.annotate(short, (memory, recall), fontsize=8, ha='left', va='bottom',
+    if any(k in name for k in ["512b/100c", "256b/300c"]) and "parallel" not in name and "batched" not in name:
+        ax.annotate("FaceFlash", (memory, recall), fontsize=9, fontweight='bold',
+                    ha='right', color=COLORS["FaceFlash"],
+                    xytext=(-8, 3), textcoords='offset points')
+    elif name == "HNSWLIB (ef=128)":
+        ax.annotate("HNSW", (memory, recall), fontsize=9, color=COLORS["HNSW"],
+                    xytext=(5, -12), textcoords='offset points')
+    elif "USearch (HNSW)" == name:
+        ax.annotate("USearch", (memory, recall), fontsize=9, color=COLORS["USearch"],
+                    xytext=(5, -12), textcoords='offset points')
+    elif "ScaNN" in name:
+        ax.annotate("ScaNN", (memory, recall), fontsize=9, color=COLORS["ScaNN"],
+                    xytext=(5, 3), textcoords='offset points')
+    elif "FAISS-Flat" in name:
+        ax.annotate("FAISS-Flat", (memory, recall), fontsize=9, color=COLORS["FAISS-Flat"],
                     xytext=(5, 3), textcoords='offset points')
 
-ax.set_xlabel('Memory (MB, log scale) — left is better', fontsize=11)
-ax.set_ylabel('Recall@1 (%) — higher is better', fontsize=11)
-ax.set_title(f'Recall vs Memory at {target_scale}: FaceFlash Dominates the Top-Left Corner', fontsize=13, fontweight='bold')
+# Draw the "good corner" box
+ax.axhspan(99, 101, xmin=0, xmax=0.15, alpha=0.08, color=COLORS["FaceFlash"])
+ax.text(8, 99.3, "The good corner\n(high recall, low memory)", fontsize=9,
+        color=COLORS["FaceFlash"], fontstyle='italic', alpha=0.8)
+
+ax.set_xlabel('Memory (MB, log scale) — left is better')
+ax.set_ylabel('Recall@1 (%) — higher is better')
+ax.set_title('Recall vs Memory at 500K Faces\nFaceFlash: 100% recall at 30 MB. Competitors need 1,000+ MB.', fontweight='bold')
 ax.set_xscale('log')
 ax.set_ylim(84, 101)
-ax.grid(alpha=0.3)
+ax.grid(alpha=0.2)
+ax.spines['top'].set_visible(False)
+ax.spines['right'].set_visible(False)
 plt.tight_layout()
 plt.savefig(FIGURES / "chart_recall_memory_scale.png", dpi=150, bbox_inches='tight')
 plt.savefig(FIGURES / "chart_recall_memory_scale.svg", bbox_inches='tight')
 plt.close()
 print("  Saved: chart_recall_memory_scale.png")
 
-print("\n  All scale comparison charts generated.")
+print("\n  All charts generated successfully.")

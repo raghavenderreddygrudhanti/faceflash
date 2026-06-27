@@ -35,7 +35,7 @@ Batched rows use all cores (128-thread AMD EPYC 9355).
 
 > **Memory = binary index only.** Float vectors for reranking are mmap'd from disk after `save()`/`load()` — only ~100 candidate rows are paged per query. See [Limitations](#limitations) for details.
 
-![Memory to index 100K faces — FaceFlash 6 MB vs HNSW 293 MB](docs/figures/chart_memory_bar.png)
+![Memory to index 500K faces — FaceFlash 30 MB vs HNSW 1,465 MB at 100% recall](docs/figures/chart_memory_scale.png)
 
 ![FaceFlash demo — search 100,000 faces from a 6 MB index in ~0.4 ms on CPU](docs/figures/demo.gif)
 
@@ -192,7 +192,7 @@ More bits = more memory per face but higher binary-only recall. The cosine reran
 
 ### vs All ANN Methods — 100K Faces (6,939 identities)
 
-![Recall vs memory — FaceFlash sits alone in the high-recall, low-memory corner](docs/figures/chart_recall_memory_pareto.png)
+![Recall vs memory at 500K — FaceFlash dominates the top-left corner](docs/figures/chart_recall_memory_scale.png)
 
 | Method | Recall@1 | Latency | QPS | Memory | Type |
 |--------|----------|---------|-----|--------|------|
