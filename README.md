@@ -4,8 +4,8 @@
 
 FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ binary quantization** — a learned hash that preserves identity information with zero recall loss and no separate training phase.
 
-- **100% Recall@1, 48× less memory.** On the MS1MV2 benchmark (44,291 identities), FaceFlash achieved 100% Recall@1 at every scale from 100K to 1M while using approximately 48× less index memory than HNSWLIB, 42× less than USearch, and 32× less than FAISS-Flat.
-- **Faster than HNSW at 100K.** On the same benchmark, FaceFlash single-query latency was 0.43ms vs HNSWLIB's 0.60ms (1.4× faster). Batched throughput: 27,661 qps vs 5,813 qps (4.8× faster). Both at 100% recall.
+- **100% Recall@1, 96× less memory.** On the MS1MV2 benchmark (44,291 identities), FaceFlash achieved 100% Recall@1 at every scale from 100K to 1M while using approximately 96× less index memory than HNSWLIB (256b config), 83× less than USearch, and 64× less than FAISS-Flat.
+- **Faster than HNSW at 100K.** On the same benchmark, FaceFlash single-query latency was 0.30ms vs HNSWLIB's 0.60ms (2× faster). Batched throughput: 27,661 qps vs 5,813 qps (4.8× faster). Both at 100% recall.
 - **AVX-512 VPOPCNTDQ + NEON.** Hand-written SIMD kernels process one 512-bit face code per instruction. Cache-blocked batching measured at 10–17× throughput vs per-query serial on the same hardware.
 - **Zero-config indexing.** Add faces, they're indexed — PCA fits automatically after 1,024 samples, no hyperparameter tuning, no rebuilds as the gallery grows.
 - **Pure local.** No managed service, no data leaving your machine. Pair with any ArcFace model for a fully air-gapped face search stack.
@@ -49,10 +49,10 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 | | FaceFlash | HNSWLIB | USearch | ScaNN | FAISS-Flat |
 |---|---|---|---|---|---|
 | **Recall@1** | **100%** | 100% | 99.5% | 98.3% | 100% |
-| **Memory @ 100K** | **6.1 MB** | 293 MB | 254 MB | 12 MB | 195 MB |
-| **Memory @ 500K** | **30.5 MB** | 1,465 MB | 1,270 MB | 61 MB | 977 MB |
-| **Memory @ 1M** | **61 MB** | 2,930 MB | 2,539 MB | 122 MB | 1,953 MB |
-| **Latency @ 100K** | 0.43ms | 0.60ms | 0.17ms | 0.10ms | 4.90ms |
+| **Memory @ 100K** | **3.05 MB** | 293 MB | 254 MB | 12 MB | 195 MB |
+| **Memory @ 500K** | **15.3 MB** | 1,465 MB | 1,270 MB | 61 MB | 977 MB |
+| **Memory @ 1M** | **30.5 MB** | 2,930 MB | 2,539 MB | 122 MB | 1,953 MB |
+| **Latency @ 100K** | **0.30ms** | 0.60ms | 0.17ms | 0.10ms | 4.90ms |
 | **Batched QPS @ 100K** | 27,661 | 5,813 | **137,264** | — | — |
 | **Index build** | Auto (PCA fit) | Build graph | Build graph | Partition | None |
 
@@ -64,7 +64,7 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 
 <img src="docs/figures/chart_memory_scale.png" width="800" alt="Memory comparison: FaceFlash vs all competitors at 500K faces"/>
 
-<sub><b>Index Memory at 500K Faces:</b> FaceFlash (30 MB) vs HNSW (1,465 MB) — 48× less RAM at 100% recall</sub>
+<sub><b>Index Memory at 500K Faces:</b> FaceFlash (15 MB) vs HNSW (1,465 MB) — 96× less RAM at 100% recall</sub>
 
 </div>
 
@@ -122,7 +122,7 @@ ff.load("my_index/")
 
 | Scenario | Why FaceFlash wins |
 |---|---|
-| **Edge / mobile / IoT** | 6-61 MB vs 293-2,930 MB for HNSW — fits in device RAM |
+| **Edge / mobile / IoT** | 3–30 MB vs 293–2,930 MB for HNSW — fits in device RAM |
 | **Multi-tenant servers** | 100 galleries x 30 MB = 3 GB. HNSW: 100 x 1.5 GB = 150 GB |
 | **Batch dedup / watchlists** | 4.8x faster than HNSW batched at 100K; 1.9x at 500K |
 | **100% recall is non-negotiable** | FaceFlash hits 100% at every scale; USearch drops to 94-99% |
@@ -191,7 +191,7 @@ All single-query rows are single-threaded. Batched rows use all available cores.
 
 <img src="docs/figures/chart_latency_scale.png" width="760" alt="Single-query latency: all methods 100K to 1M"/>
 
-<sub><b>Single-Query Latency:</b> FaceFlash 0.43ms vs HNSW 0.60ms at 100K — both at 100% recall</sub>
+<sub><b>Single-Query Latency:</b> FaceFlash 0.30ms vs HNSW 0.60ms at 100K — both at 100% recall</sub>
 
 </div>
 
@@ -205,13 +205,13 @@ All single-query rows are single-threaded. Batched rows use all available cores.
 
 | Scale | Recall | Single-query | Batched QPS | Memory | vs HNSW memory |
 |---|---|---|---|---|---|
-| 100K | 100% | 0.43ms | 27,661 | 6.1 MB | **48x less** |
-| 200K | 100% | 0.66ms | 19,930 | 12.2 MB | **48x less** |
-| 300K | 100% | 0.88ms | 15,147 | 18.3 MB | **48x less** |
-| 500K | 100% | 1.54ms | 10,337 | 30.5 MB | **48x less** |
-| 1M | 100% | 2.92ms | 5,403 | 61 MB | **48x less** |
+| 100K | 100% | **0.30ms** (2× faster than HNSW) | 27,661 | **3.05 MB** | **96× less** |
+| 200K | 100% | 0.57ms (tied with HNSW) | 19,930 | **6.1 MB** | **96× less** |
+| 300K | 100% | 0.84ms | 15,147 | **9.2 MB** | **96× less** |
+| 500K | 100% | 1.45ms | 10,337 | **15.3 MB** | **96× less** |
+| 1M | 100% | 2.95ms | 5,403 | **30.5 MB** | **96× less** |
 
-FaceFlash dominates up to 300K on every axis. At 500K-1M, HNSW edges ahead on single-query latency (O(log N) vs O(N)), but FaceFlash still wins on batched throughput and always uses 48x less memory.
+FaceFlash dominates up to 300K on every axis. At 500K-1M, HNSW edges ahead on single-query latency (O(log N) vs O(N)), but FaceFlash still wins on batched throughput and always uses 96× less memory.
 
 ### 1:N Identification - 44,290 Distinct People
 
@@ -361,7 +361,7 @@ rust/                               # Rust backend (PyO3 + Rayon)
 
 **Why PCA+ITQ?** ArcFace embeddings concentrate identity information along principal axes. PCA aligns quantization with those axes; ITQ rotates bits for balanced marginals. The result is lossless compression at 512 bits.
 
-**Why not HNSW internally?** HNSW stores a graph on top of full float vectors — about 1.5x raw memory. FaceFlash stores 64 bytes per face. Float vectors are memory-mapped from disk and paged only for the top ~100 candidates per query. Trade-off: higher single-query latency at 500K+, but 48x less memory.
+**Why not HNSW internally?** HNSW stores a graph on top of full float vectors — about 1.5x raw memory. FaceFlash stores 32–64 bytes per face. Float vectors are memory-mapped from disk and paged only for the top ~100 candidates per query. Trade-off: higher single-query latency at 500K+, but 96× less memory.
 
 **Why Rust + AVX-512?** AVX-512 VPOPCNTDQ processes an entire 512-bit code in one instruction. Combined with cache-blocked batching and Rayon parallelism, this gives 10-17x throughput versus serial per-query execution. Runtime-detected — no user configuration needed.
 
@@ -370,7 +370,7 @@ rust/                               # Rust backend (PyO3 + Rayon)
 ## Limitations
 
 - **Single-query at 1M+** — O(N) linear scan; HNSW is 4.4x faster per single query at 1M. Batched path ties.
-- **Memory during build** — holds all float vectors in RAM. The 48x savings apply after `save()` / `load()`.
+- **Memory during build** — holds all float vectors in RAM. The 96× savings apply after `save()` / `load()`.
 - **AVX-512 VPOPCNTDQ** — the 3.5x speedup requires Ice Lake / Zen 4+ / EPYC 9004+. Older CPUs fall back to scalar POPCNT automatically.
 - **Rerank I/O** — pages ~100 float rows from disk per query. Invisible on NVMe; adds latency on slow storage.
 
@@ -402,7 +402,7 @@ bash scripts/runpod_ms1m.sh   # FORCE_EXTRACT=1 for full 85K extraction
 **v0.2.0 (done)**
 - [x] Prebuilt wheels (`pip install faceflash`)
 - [x] Full 85K-identity benchmark (76,872 identities extracted, 44,291 with sufficient data)
-- [x] On-device memory measurement (6.1 MB binary index @100K)
+- [x] On-device memory measurement (3.05 MB binary index @100K with 256b)
 
 **v0.3.0 (done)**
 - [x] IVF coarse clustering (2.7-4.9x speedup at scale)
