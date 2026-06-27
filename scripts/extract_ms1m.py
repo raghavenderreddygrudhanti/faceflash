@@ -12,7 +12,6 @@ Usage:
 """
 
 import sys
-import os
 import time
 import argparse
 import numpy as np
@@ -169,8 +168,6 @@ def main():
     
     from faceflash.embed import FaceEmbedder
     embedder = FaceEmbedder()
-    
-    import onnxruntime as ort
     provider = embedder.session.get_providers()[0]
     print(f"  ONNX provider: {provider}")
     if 'CUDA' in provider:

@@ -33,9 +33,7 @@ import os
 import time
 import json
 import argparse
-import traceback
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import numpy as np
 

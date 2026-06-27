@@ -3,7 +3,6 @@ Face embedding — converts a face image to a 512-dim vector using ArcFace (ONNX
 Downloads the model automatically on first use.
 """
 
-import os
 import urllib.request
 from pathlib import Path
 import numpy as np
@@ -18,7 +17,7 @@ def ensure_model():
     if MODEL_PATH.exists():
         return MODEL_PATH
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"  Downloading ArcFace model (~250MB)...")
+    print("  Downloading ArcFace model (~250MB)...")
     urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
     print(f"  Saved to {MODEL_PATH}")
     return MODEL_PATH

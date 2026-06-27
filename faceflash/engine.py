@@ -5,10 +5,10 @@ Combines detection + embedding + quantization + search.
 
 import numpy as np
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
 import time
 
-from faceflash.detect import load_image, detect_and_align, detect_faces
+from faceflash.detect import load_image, detect_and_align
 from faceflash.embed import FaceEmbedder
 from faceflash.index import FaceIndex
 
