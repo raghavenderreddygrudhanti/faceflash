@@ -112,9 +112,67 @@ ff.verify("photo1.jpg", "photo2.jpg")
 ff.register_folder("employees/")
 ff.save("my_index/")
 ff.load("my_index/")
+
+# Manage the index
+len(ff)                  # how many faces are registered
+"Alice" in ff            # is this person registered?
+ff.names()               # list registered people
+ff.remove("Alice")       # unregister a person (returns count removed)
 ```
 
 > For best accuracy, use pre-aligned 112x112 face crops. 5-point alignment (SCRFD/RetinaFace) adds +1.28 accuracy points over a basic center-crop.
+
+---
+
+## Gallery Management
+
+```python
+from faceflash import FaceFlash
+
+ff = FaceFlash()
+ff.register("Alice", "alice.jpg")
+ff.register("Bob", "bob.jpg")
+ff.register("Alice", "alice2.jpg")  # multiple photos per person
+
+# Check gallery state
+len(ff)              # 3 (total face entries)
+ff.names()           # ["Alice", "Bob"]
+"Alice" in ff        # True
+"Charlie" in ff      # False
+
+# Remove a person (GDPR / right-to-be-forgotten)
+ff.remove("Bob")     # removes all entries for Bob
+len(ff)              # 2
+ff.names()           # ["Alice"]
+
+# Monitor index stats
+ff.stats()
+# {'count': 2, 'pca_fitted': True, 'rust_backend': True,
+#  'binary_memory_mb': 0.0, 'resident_memory_mb': 0.0, ...}
+```
+
+## Batch Identification
+
+Process many query faces at once (4.8x faster than one-by-one):
+
+```python
+import numpy as np
+from faceflash import FaceFlash
+
+ff = FaceFlash()
+ff.register_folder("gallery/")
+ff.save("my_index/")
+
+# Low-level batch search (for bulk dedup, watchlists, video frames)
+embeddings = np.load("query_embeddings.npy")  # (N, 512) float32
+results = ff.index.search_batch(embeddings, k=1)
+# results[i] = [(name, similarity, index), ...]
+
+# Example: find all matches above threshold
+for i, matches in enumerate(results):
+    if matches and matches[0][1] > 0.5:
+        print(f"Query {i}: {matches[0][0]} (confidence {matches[0][1]:.2f})")
+```
 
 ---
 
