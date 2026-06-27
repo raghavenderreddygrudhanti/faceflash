@@ -10,10 +10,14 @@ FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ 
 - **Zero-config indexing.** Add faces, they're indexed — PCA fits automatically after 1,024 samples, no hyperparameter tuning, no rebuilds as the gallery grows.
 - **Pure local.** No managed service, no data leaving your machine. Pair with any ArcFace model for a fully air-gapped face search stack.
 
+<div align="center">
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 [![Rust AVX-512](https://img.shields.io/badge/backend-Rust%20AVX--512%20VPOPCNTDQ-orange.svg)](rust/)
 [![CI](https://github.com/raghavenderreddygrudhanti/faceflash/actions/workflows/ci.yml/badge.svg)](https://github.com/raghavenderreddygrudhanti/faceflash/actions)
+
+</div>
 
 ```python
 from faceflash import FaceFlash
@@ -54,9 +58,19 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 
 > Tested on MS1MV2 (44,291 identities, 645,019 embeddings). Hardware: AMD EPYC 9355, 128 threads, AVX-512 active.
 
-![Memory comparison: FaceFlash vs all competitors at 500K faces](docs/figures/chart_memory_scale.png)
+<div align="center">
 
-![FaceFlash demo](docs/figures/demo.gif)
+<img src="docs/figures/chart_memory_scale.png" width="800" alt="Memory comparison: FaceFlash vs all competitors at 500K faces"/>
+
+<sub><b>Index Memory at 500K Faces:</b> FaceFlash (30 MB) vs HNSW (1,465 MB) — 48× less RAM at 100% recall</sub>
+
+</div>
+
+<div align="center">
+
+<img src="docs/figures/demo.gif" width="720" alt="FaceFlash live demo"/>
+
+</div>
 
 ---
 
@@ -122,46 +136,57 @@ ff.load("my_index/")
 
 ## How It Works
 
-```
-                    ┌─────────────────────────────────────────┐
-                    │           FaceFlash Pipeline             │
-                    └─────────────────────────────────────────┘
+<div align="center">
 
-                              Input Image
-                                  │
-                          Face Detection (SCRFD)
-                                  │
-                       5-Point Alignment (RetinaFace)
-                                  │
-                        ArcFace ONNX Embedding
-                            (512-dim float)
-                                  │
-                    ┌─────────────┴──────────────┐
-                    │     PCA Projection          │
-                    │  (align with identity axes) │
-                    └─────────────┬──────────────┘
-                                  │
-                    ┌─────────────┴──────────────┐
-                    │     ITQ Rotation            │
-                    │  (balanced binary codes)    │
-                    └─────────────┬──────────────┘
-                                  │
-                     64-byte Binary Fingerprint
-                                  │
-              ┌───────────────────┴───────────────────┐
-              │  Hamming Scan (Rust AVX-512 VPOPCNTDQ) │
-              │  One instruction per 512-bit code      │
-              └───────────────────┬───────────────────┘
-                                  │
-                          Top-K Candidates
-                                  │
-                    ┌─────────────┴──────────────┐
-                    │   Cosine Rerank (~100 rows) │
-                    │   (exact float similarity)  │
-                    └─────────────┬──────────────┘
-                                  │
-                             Match Result
 ```
+╔══════════════════════════════════════════════════════╗
+║              ⚡  FaceFlash Pipeline                  ║
+╚══════════════════════════════════════════════════════╝
+
+         📷  Input Image
+                │
+                ▼
+  ┌─────────────────────────────┐
+  │   Face Detection  (SCRFD)   │  Neural face detector
+  └─────────────┬───────────────┘
+                │
+                ▼
+  ┌─────────────────────────────┐
+  │   5-Point Alignment         │  RetinaFace landmarks
+  └─────────────┬───────────────┘
+                │
+                ▼
+  ┌─────────────────────────────┐
+  │   ArcFace ONNX Embedding    │  512-dim float vector
+  └──────┬──────────────────────┘
+         │
+    ┌────▼──────────────────────┐
+    │   PCA Projection          │  Align with identity axes
+    └────┬──────────────────────┘
+         │
+    ┌────▼──────────────────────┐
+    │   ITQ Rotation            │  Balanced binary marginals
+    └────┬──────────────────────┘
+         │
+         ▼
+  ───  64-byte Binary Fingerprint  ───
+         │
+         ▼
+  ┌─────────────────────────────────────────┐
+  │   Hamming Scan                          │
+  │   Rust AVX-512 VPOPCNTDQ               │  1 instr per 512-bit face
+  └─────────────────┬───────────────────────┘
+                    │  Top-K Candidates
+                    ▼
+  ┌─────────────────────────────────────────┐
+  │   Cosine Rerank  (~100 rows)            │  Exact float similarity
+  └─────────────────┬───────────────────────┘
+                    │
+                    ▼
+              Match Result
+```
+
+</div>
 
 Each face is compressed into a **64-byte binary fingerprint**:
 
@@ -200,11 +225,29 @@ All single-query rows are single-threaded. Batched rows use all available cores.
 
 ### Scale Summary (100K-1M)
 
-![Batched throughput: FaceFlash vs all competitors 100K to 1M](docs/figures/chart_throughput_scale.png)
+<div align="center">
 
-![Single-query latency: all methods 100K to 1M](docs/figures/chart_latency_scale.png)
+<img src="docs/figures/chart_throughput_scale.png" width="760" alt="Batched throughput: FaceFlash vs all competitors 100K to 1M"/>
 
-![Recall vs Memory at 500K](docs/figures/chart_recall_memory_scale.png)
+<sub><b>Batched Throughput (QPS):</b> FaceFlash 100K→1M — 4.8× faster than HNSW at 100K</sub>
+
+</div>
+
+<div align="center">
+
+<img src="docs/figures/chart_latency_scale.png" width="760" alt="Single-query latency: all methods 100K to 1M"/>
+
+<sub><b>Single-Query Latency:</b> FaceFlash 0.43ms vs HNSW 0.60ms at 100K — both at 100% recall</sub>
+
+</div>
+
+<div align="center">
+
+<img src="docs/figures/chart_recall_memory_scale.png" width="760" alt="Recall vs Memory at 500K"/>
+
+<sub><b>Recall vs Memory Pareto:</b> FaceFlash sits at the frontier — 100% recall, 30 MB</sub>
+
+</div>
 
 | Scale | Recall | Single-query | Batched QPS | Memory | vs HNSW memory |
 |---|---|---|---|---|---|
@@ -220,7 +263,13 @@ FaceFlash dominates up to 300K on every axis. At 500K-1M, HNSW edges ahead on si
 
 The hardest test: one photo per person in the gallery, identify them from a different photo.
 
-![Rank-1 identification ties exact search on 44,290 people](docs/figures/chart_rank1_tie.png)
+<div align="center">
+
+<img src="docs/figures/chart_rank1_tie.png" width="720" alt="Rank-1 identification ties exact search on 44,290 people"/>
+
+<sub><b>1:N Identification on 44,290 Identities:</b> FaceFlash matches FAISS-Flat accuracy at 35× less memory</sub>
+
+</div>
 
 | Method | Rank-1 Accuracy | Memory |
 |---|---|---|
@@ -317,7 +366,13 @@ ff.search("query.jpg", n_candidates=200)       # per-query override
 
 ### Speed up large indexes with clustering
 
-![Clustering recall/speed tradeoff](docs/figures/chart_clustering_tradeoff.png)
+<div align="center">
+
+<img src="docs/figures/chart_clustering_tradeoff.png" width="720" alt="Clustering recall/speed tradeoff"/>
+
+<sub><b>IVF Clustering Speedup:</b> 5–8× faster at 500K+ with configurable recall trade-off</sub>
+
+</div>
 
 ```python
 ff.index.build_clusters(n_probe=16)
@@ -337,15 +392,16 @@ Clustering is mainly useful at 500K+ where it delivers 5-8x speedup at ~88-93% r
 ## Architecture
 
 ```
-faceflash/
-├── engine.py         # High-level API (register, search, verify)
-├── detect.py         # Face detection (SCRFD + Haar fallback)
-├── align.py          # 5-point alignment to ArcFace template
-├── embed.py          # ArcFace ONNX embedding (512-dim, auto-download)
-├── index.py          # Binary index + batched search
-├── pca_quantize.py   # PCA+ITQ quantizer (the core algorithm)
-rust/
-├── src/lib.rs        # AVX-512 VPOPCNTDQ / NEON / scalar POPCNT (PyO3 + Rayon)
+faceflash/                          # Python package
+├── engine.py         ◀─ High-level API (register, search, verify)
+├── detect.py         ◀─ Face detection (SCRFD + Haar fallback)
+├── align.py          ◀─ 5-point alignment to ArcFace template
+├── embed.py          ◀─ ArcFace ONNX embedding (512-dim, auto-download)
+├── index.py          ◀─ Binary index + batched search
+└── pca_quantize.py   ◀─ PCA+ITQ quantizer (the core algorithm)
+
+rust/                               # Rust backend (PyO3 + Rayon)
+├── src/lib.rs        ◀─ AVX-512 VPOPCNTDQ / NEON / scalar POPCNT
 └── Cargo.toml
 ```
 
