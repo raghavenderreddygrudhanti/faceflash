@@ -14,6 +14,9 @@ FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
+[![PyPI](https://img.shields.io/pypi/v/faceflash.svg)](https://pypi.org/project/faceflash/)
+[![Downloads](https://img.shields.io/pypi/dm/faceflash.svg)](https://pypi.org/project/faceflash/)
+[![Libraries.io](https://img.shields.io/librariesio/release/pypi/faceflash)](https://libraries.io/pypi/faceflash)
 [![Rust AVX-512](https://img.shields.io/badge/backend-Rust%20AVX--512%20VPOPCNTDQ-orange.svg)](rust/)
 [![CI](https://github.com/raghavenderreddygrudhanti/faceflash/actions/workflows/ci.yml/badge.svg)](https://github.com/raghavenderreddygrudhanti/faceflash/actions)
 
