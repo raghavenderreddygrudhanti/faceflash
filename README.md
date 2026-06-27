@@ -1,6 +1,6 @@
 # ⚡ FaceFlash
 
-**A 1M face gallery takes 2.9 GB in HNSW. FaceFlash fits it in 61 MB — and searches it at 100% recall.**
+**FaceFlash searches 1M faces in 61 MB of RAM. HNSW needs 2.9 GB, USearch needs 2.5 GB, FAISS needs 1.9 GB — for the same 100% recall.**
 
 FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ binary quantization** — a learned hash that preserves identity information with zero recall loss and no separate training phase.
 
