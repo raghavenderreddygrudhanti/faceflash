@@ -443,6 +443,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for coding guidelines.
 
 ---
 
+## Credits & References
+
+FaceFlash does **not** introduce a new embedding model or hashing algorithm. It combines proven, published techniques into a CPU-efficient retrieval system — with hand-written Rust AVX-512/NEON kernels, cache-blocked batching, and rigorous, reproducible benchmarks. The contribution is the **system** (exact-recall face search in a megabyte-scale footprint) and the honest measurement of it, not the underlying math.
+
+It builds directly on:
+
+| Component | Reference |
+|-----------|-----------|
+| **Binary quantization** (PCA + ITQ — the core method) | Gong & Lazebnik, *"Iterative Quantization: A Procrustean Approach to Learning Binary Codes,"* CVPR 2011 |
+| **Face embeddings** | Deng, Guo, Xue & Zafeiriou, *"ArcFace: Additive Angular Margin Loss for Deep Face Recognition,"* CVPR 2019 — weights from [InsightFace](https://github.com/deepinsight/insightface) |
+| **Detection & 5-point alignment** | *RetinaFace* (CVPR 2020) / *SCRFD* (ICLR 2022), InsightFace |
+| **Dataset** | Guo et al., *"MS-Celeb-1M,"* ECCV 2016 (MS1MV2 = ArcFace's refined/cleaned version) |
+| **Verification benchmark** | Huang et al., *"Labeled Faces in the Wild (LFW),"* UMass TR 2007 |
+| **Baselines compared** | FAISS (Johnson et al.), HNSW (Malkov & Yashunin, TPAMI 2018), ScaNN (Guo et al., ICML 2020), [USearch](https://github.com/unum-cloud/usearch) |
+
+PCA dates to Pearson (1901) / Hotelling (1933); the Hamming distance to Hamming (1950); `POPCNT` / `VPOPCNTDQ` are Intel/AMD hardware instructions. FaceFlash's value is in how these are combined and implemented — not in inventing them.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
