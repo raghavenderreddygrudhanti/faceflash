@@ -190,6 +190,8 @@ ff.load("my_index/")
 
 </div>
 
+![FaceFlash Architecture Pipeline](docs/figures/architecture_pipeline.png)
+
 Each face is compressed into a **64-byte binary fingerprint**:
 
 1. **ArcFace** extracts a 512-dimensional float embedding
