@@ -7,9 +7,12 @@
 
 **Face search that fits in a megabyte.**
 
-Search 44,000 distinct people in 2.7 MB. Search 500,000 faces in 30 MB.
-100% recall — same as exact brute-force — at 48× less memory than HNSW.
-Faster than HNSW in both single-query (at 100K) and batched mode (up to 500K). Runs on CPU.
+100% recall at 48× less memory than HNSW. Faster than HNSW at 100K (single-query and batched).
+Scales to 1M faces in 61 MB. No GPU, no training, runs on CPU.
+
+- **100K faces:** 6.1 MB index, 0.43ms search, 27,661 batched QPS
+- **500K faces:** 30.5 MB index, 100% recall, 1.9× faster batched than HNSW
+- **1M faces:** 61 MB index vs HNSW's 2.9 GB — same recall, tied throughput
 
 ```
 pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"
