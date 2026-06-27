@@ -14,12 +14,20 @@ authors = [
 ]
 keywords = ["face-recognition", "vector-search", "binary-quantization", "arcface", "memory-efficient"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Rust",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
 ]
 dependencies = [
     "numpy>=1.24",
@@ -41,6 +49,8 @@ benchmark = ["faiss-cpu>=1.7", "usearch>=2.0", "hnswlib>=0.7"]
 
 [project.urls]
 Homepage = "https://github.com/raghavenderreddygrudhanti/faceflash"
+Repository = "https://github.com/raghavenderreddygrudhanti/faceflash"
+Issues = "https://github.com/raghavenderreddygrudhanti/faceflash/issues"
 
 # Maturin builds the Rust POPCNT backend (faceflash_core) into the wheel and
 # bundles the pure-Python `faceflash` package alongside it. So `pip install
