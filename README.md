@@ -48,6 +48,10 @@ FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary
 
 > Tested on MS1MV2 (44,291 identities, 645,019 embeddings). Hardware: AMD EPYC 9355, 128 threads, AVX-512 active.
 
+![Memory comparison: FaceFlash vs all competitors at 500K faces](docs/figures/chart_memory_scale.png)
+
+![FaceFlash demo](docs/figures/demo.gif)
+
 ---
 
 ## Install
@@ -136,6 +140,12 @@ This is why 512 bits is the fastest setting — the entire code fits in one AVX-
 
 ### Scale Summary (100K-1M)
 
+![Batched throughput: FaceFlash vs all competitors 100K to 1M](docs/figures/chart_throughput_scale.png)
+
+![Single-query latency: all methods 100K to 1M](docs/figures/chart_latency_scale.png)
+
+![Recall vs Memory at 500K](docs/figures/chart_recall_memory_scale.png)
+
 | Scale | Recall | Single-query | Batched QPS | Memory | vs HNSW memory |
 |---|---|---|---|---|---|
 | 100K | 100% | 0.43ms | 27,661 | 6.1 MB | **48x less** |
@@ -149,6 +159,8 @@ FaceFlash dominates up to 300K on every axis. At 500K-1M, HNSW edges ahead on si
 ### 1:N Identification - 44,290 Distinct People
 
 The hardest test: one photo per person in the gallery, identify them from a different photo.
+
+![Rank-1 identification ties exact search on 44,290 people](docs/figures/chart_rank1_tie.png)
 
 | Method | Rank-1 Accuracy | Memory |
 |---|---|---|
@@ -244,6 +256,8 @@ ff.search("query.jpg", n_candidates=200)       # per-query override
 ```
 
 ### Speed up large indexes with clustering
+
+![Clustering recall/speed tradeoff](docs/figures/chart_clustering_tradeoff.png)
 
 ```python
 ff.index.build_clusters(n_probe=16)
