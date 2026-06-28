@@ -205,7 +205,7 @@ for i, matches in enumerate(results):
 
 ## How It Works
 
-
+FaceFlash is a **face recognition** system — it detects faces in images, converts them to numerical embeddings, and searches by visual similarity. Filenames are just how you point it to the image file; the matching happens in embedding space.
 
 ![FaceFlash Architecture Pipeline](https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/architecture_pipeline.png)
 
