@@ -2,10 +2,10 @@
 
 **Face search that fits 1M faces in 61 MB of RAM, at the same recall as exact brute-force cosine.** Stores ArcFace embeddings as 512-bit binary codes instead of full float vectors, then reranks the top candidates with exact cosine to recover accuracy.
 
-This is a **compression + packaging** project, not a new search algorithm. The search is a brute-force Hamming scan (same as FAISS `IndexBinaryFlat`) plus a cosine rerank. The reason it works without losing accuracy is that ArcFace embeddings are low-rank, so PCA+ITQ binary codes preserve nearest-neighbor ordering. On general/random vectors this does **not** hold — see [Limitations](#limitations).
+This is a **compression + packaging** project, not a new search algorithm. The search is a brute-force Hamming scan (same as FAISS `IndexBinaryFlat`) plus a cosine rerank. The reason it works without losing accuracy is that ArcFace embeddings are low-rank, so PCA+ITQ binary codes preserve nearest-neighbor ordering. On general or random vectors this does not hold (see [Limitations](#limitations)).
 
 - **Same Recall@1 as exact search, ~32× smaller index.** Each 512-float embedding (2,048 bytes) becomes a 64-byte binary code. Verified against FAISS-Flat ground truth on MS1MV2.
-- **Lower per-query latency than HNSW up to ~200K**, because the binary scan fits in cache. From ~300K up, HNSW's O(log N) graph wins — the scan is O(N).
+- **Lower per-query latency than HNSW up to ~200K**, because the binary scan fits in cache. From ~300K up, HNSW's O(log N) graph wins; the scan is O(N).
 - **Zero config.** PCA fits automatically after 1,024 samples. No graph to build, no hyperparameters.
 - **Local and offline.** No service, no network. CPU only.
 
@@ -43,7 +43,7 @@ result = ff.search("security_cam_frame.jpg")
 
 **Isn't:** a new ANN algorithm. The Hamming scan is brute force. You could reproduce the same recall with `faiss.PCAMatrix` + `IndexBinaryFlat` + manual reranking. FaceFlash just packages that pipeline and tunes the SIMD kernel.
 
-The comparison against HNSW below is a *system-level* one — "which tool do I reach for to search faces" — not a claim that the search algorithm is novel. HNSW stores full floats plus a graph; FaceFlash stores 64-byte codes. That's the whole reason the memory differs.
+The comparison against HNSW below is a *system-level* one ("which tool do I reach for to search faces"), not a claim that the search algorithm is novel. HNSW stores full floats plus a graph; FaceFlash stores 64-byte codes. That's the whole reason the memory differs.
 
 ---
 
@@ -90,7 +90,7 @@ pip install "faceflash[cpu] @ git+https://github.com/raghavenderreddygrudhanti/f
 pip install "faceflash[cpu,benchmark] @ git+https://github.com/raghavenderreddygrudhanti/faceflash.git"
 ```
 
-> Requires a [Rust toolchain](https://rustup.rs) — it compiles the AVX-512/NEON backend automatically and falls back to NumPy if unavailable.
+> Requires a [Rust toolchain](https://rustup.rs); it compiles the AVX-512/NEON backend automatically and falls back to NumPy if unavailable.
 
 ---
 
@@ -199,7 +199,7 @@ for i, matches in enumerate(results):
 
 ## How It Works
 
-FaceFlash is a **face recognition** system — it detects faces in images, converts them to numerical embeddings, and searches by visual similarity. Filenames are just how you point it to the image file; the matching happens in embedding space.
+FaceFlash is a **face recognition** system: it detects faces in images, converts them to numerical embeddings, and searches by visual similarity. Filenames are just how you point it to the image file; the matching happens in embedding space.
 
 ![FaceFlash Architecture Pipeline](https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/architecture_pipeline.png)
 
@@ -211,13 +211,13 @@ Each face is compressed into a **64-byte binary fingerprint**:
 4. **AVX-512 VPOPCNTDQ** scans all binary codes in a single instruction per face
 5. **Cosine rerank** runs exact similarity on only the top ~100 candidates
 
-This is why 512 bits is the fastest setting — the entire code fits in one AVX-512 register.
+This is why 512 bits is the fastest setting: the entire code fits in one AVX-512 register.
 
 ---
 
 ## Is the win the compression or the search?
 
-The compression. FaceFlash's Hamming scan is brute force — structurally the same as FAISS `IndexBinaryFlat`. To prove the kernel isn't doing anything special, `benchmarks/bench_compression_isolation.py` runs the **same** PCA+ITQ codes through both FaceFlash's Rust kernel and FAISS `IndexBinaryFlat`, then reranks identically:
+The compression. FaceFlash's Hamming scan is brute force, structurally the same as FAISS `IndexBinaryFlat`. To prove the kernel isn't doing anything special, `benchmarks/bench_compression_isolation.py` runs the **same** PCA+ITQ codes through both FaceFlash's Rust kernel and FAISS `IndexBinaryFlat`, then reranks identically:
 
 | Method (same codes) | Recall@1 | Avg latency |
 |---|---|---|
@@ -309,7 +309,7 @@ The hardest test: one photo per person in the gallery, identify them from a diff
 | FaceFlash (512b / 300c) | 95.8% | 2.70 MB |
 | FaceFlash (256b / 100c) | 95.6% | 1.35 MB |
 
-FaceFlash matches FAISS-Flat's rank-1 accuracy here while storing 32× smaller codes (512 float32 → 512 bits). On this benchmark the binary codes lose no rank-1 accuracy after cosine rerank — that's an empirical result on ArcFace embeddings, not a general guarantee.
+FaceFlash matches FAISS-Flat's rank-1 accuracy here while storing 32× smaller codes (512 float32 → 512 bits). On this benchmark the binary codes lose no rank-1 accuracy after cosine rerank. That's an empirical result on ArcFace embeddings, not a general guarantee.
 
 <details>
 <summary>Detailed per-scale benchmark tables</summary>
@@ -436,20 +436,20 @@ rust/                               # Rust backend (PyO3 + Rayon)
 └── Cargo.toml
 ```
 
-**Why PCA+ITQ?** ArcFace embeddings concentrate identity information along principal axes. PCA aligns quantization with those axes; ITQ rotates bits for balanced marginals. On ArcFace embeddings this preserves rank-1 accuracy after rerank — it isn't a general guarantee for arbitrary vectors.
+**Why PCA+ITQ?** ArcFace embeddings concentrate identity information along principal axes. PCA aligns quantization with those axes; ITQ rotates bits for balanced marginals. On ArcFace embeddings this preserves rank-1 accuracy after rerank; it isn't a general guarantee for arbitrary vectors.
 
 **Why not HNSW internally?** HNSW stores a graph on top of full float vectors (~1.5× raw memory). FaceFlash stores 32–64 bytes per face and mmaps the float vectors from disk, paging only the top ~100 candidates per query. Trade-off: higher single-query latency past 500K, smaller footprint.
 
-**Why Rust + AVX-512?** AVX-512 VPOPCNTDQ processes an entire 512-bit code in one instruction (~3× faster than scalar POPCNT). Combined with Rayon multi-core parallelism (and cache-blocked batching to keep the scan cache-friendly), batched search reaches ~8–16× throughput versus single-query serial. Runtime-detected — no user configuration needed.
+**Why Rust + AVX-512?** AVX-512 VPOPCNTDQ processes an entire 512-bit code in one instruction (~3× faster than scalar POPCNT). Combined with Rayon multi-core parallelism (and cache-blocked batching to keep the scan cache-friendly), batched search reaches ~8–16× throughput versus single-query serial. Runtime-detected, so no user configuration is needed.
 
 ---
 
 ## Limitations
 
-- **Single-query at 1M+** — O(N) linear scan; HNSW is 4.4x faster per single query at 1M. Batched path ties.
-- **Memory during build** — holds all float vectors in RAM. The compression savings apply after `save()` / `load()`, when float vectors move to mmap'd disk.
-- **AVX-512 VPOPCNTDQ** — the ~3× kernel speedup requires Ice Lake / Zen 4+ / EPYC 9004+. Older CPUs fall back to scalar POPCNT automatically.
-- **Rerank I/O** — pages ~100 float rows from disk per query. Invisible on NVMe; adds latency on slow storage.
+- **Single-query at 1M+:** O(N) linear scan; HNSW is 4.4x faster per single query at 1M. Batched path ties.
+- **Memory during build:** holds all float vectors in RAM. The compression savings apply after `save()` / `load()`, when float vectors move to mmap'd disk.
+- **AVX-512 VPOPCNTDQ:** the ~3× kernel speedup requires Ice Lake / Zen 4+ / EPYC 9004+. Older CPUs fall back to scalar POPCNT automatically.
+- **Rerank I/O:** pages ~100 float rows from disk per query. Invisible on NVMe; adds latency on slow storage.
 
 ---
 
@@ -535,7 +535,7 @@ It builds directly on:
 | **Verification benchmark** | Huang et al., *"Labeled Faces in the Wild (LFW),"* UMass TR 2007 |
 | **Baselines compared** | FAISS (Johnson et al.), HNSW (Malkov & Yashunin, TPAMI 2018), ScaNN (Guo et al., ICML 2020), [USearch](https://github.com/unum-cloud/usearch) |
 
-PCA dates to Pearson (1901) / Hotelling (1933); the Hamming distance to Hamming (1950); `POPCNT` / `VPOPCNTDQ` are Intel/AMD hardware instructions. FaceFlash's value is in how these are combined and implemented — not in inventing them.
+PCA dates to Pearson (1901) / Hotelling (1933); the Hamming distance to Hamming (1950); `POPCNT` / `VPOPCNTDQ` are Intel/AMD hardware instructions. FaceFlash's value is in how these are combined and implemented, not in inventing them.
 
 ---
 
