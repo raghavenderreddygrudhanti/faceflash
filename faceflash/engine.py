@@ -1,7 +1,4 @@
-"""
-FaceFlash Engine — the main high-level API.
-Combines detection + embedding + quantization + search.
-"""
+"""High-level FaceFlash API. Wraps detection, embedding, and search."""
 
 import logging
 import numpy as np
@@ -17,28 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class FaceFlash:
-    """
-    FaceFlash — memory-efficient face retrieval via PCA+ITQ binary quantization.
-
-    100% Recall@1 (matching exact search) at 48-96x less memory than HNSW,
-    measured on MS1MV2 from 100K to 1M faces. CPU-only, SIMD-accelerated.
-
-    Usage:
-        ff = FaceFlash()
-        ff.register("person_name", "photo.jpg")
-        result = ff.search("query.jpg")
-    """
+    """Face search engine. Register faces, search by image, verify pairs."""
 
     def __init__(self, index_path: Optional[str] = None,
                  n_bits: int = 512, n_candidates: int = 100):
         """
-        Args:
-            n_bits: binary code length. Memory = n_bits/8 bytes per face.
-                    512 is exact-capable; 256 halves memory at ~99% recall.
-                    See the operating-point table in the README.
-            n_candidates: rerank shortlist size — the search-effort knob,
-                          independent of k. More candidates = higher recall
-                          and more float reranks (= more mmap reads on edge).
+        n_bits: code length. 512 = full recall, 256 = half memory / ~99% recall.
+        n_candidates: how many to shortlist before float rerank. Tradeoff knob.
         """
         self._embedder: Optional[FaceEmbedder] = None
         self.n_candidates = n_candidates
@@ -48,22 +30,12 @@ class FaceFlash:
 
     @property
     def embedder(self) -> FaceEmbedder:
-        """Lazy-load the embedding model."""
         if self._embedder is None:
             self._embedder = FaceEmbedder()
         return self._embedder
 
     def register(self, name: str, image_path: str) -> dict:
-        """
-        Register a person's face in the index.
-
-        Args:
-            name: Person identifier
-            image_path: Path to face image
-
-        Returns:
-            dict with embedding info
-        """
+        """Add a face to the gallery."""
         img = load_image(image_path)
         face = detect_and_align(img)
         embedding = self.embedder.embed(face)
@@ -71,12 +43,7 @@ class FaceFlash:
         return {"name": name, "registered": True, "index_size": self.index.count}
 
     def register_folder(self, folder_path: str, progress: bool = True) -> dict:
-        """
-        Register all faces in a folder.
-        Folder structure: folder/person_name/photo1.jpg, photo2.jpg, ...
-
-        Or flat: folder/person_name_001.jpg (name derived from filename)
-        """
+        """Bulk register. Expects folder/person_name/photo.jpg structure."""
         folder = Path(folder_path)
         registered = 0
         errors = 0
@@ -105,18 +72,7 @@ class FaceFlash:
 
     def search(self, image_path: str, k: int = 1, threshold: float = 0.4,
                n_candidates: Optional[int] = None) -> dict:
-        """
-        Search for a face in the index.
-
-        Args:
-            image_path: Path to query image
-            k: Number of results
-            threshold: Minimum cosine similarity to consider a match
-            n_candidates: override the instance default search-effort knob
-
-        Returns:
-            List of match dicts with name, confidence, time_ms
-        """
+        """Identify a face. Returns matches above threshold with timing info."""
         start = time.perf_counter()
 
         img = load_image(image_path)
@@ -149,12 +105,7 @@ class FaceFlash:
         }
 
     def verify(self, image1: str, image2: str) -> dict:
-        """
-        Verify if two images are the same person.
-
-        Returns:
-            dict with match (bool), confidence (float), time_ms
-        """
+        """Check if two images are the same person."""
         start = time.perf_counter()
 
         img1 = load_image(image1)
@@ -175,33 +126,26 @@ class FaceFlash:
         }
 
     def save(self, path: str):
-        """Save the index to disk."""
         self.index.save(path)
 
     def load(self, path: str):
-        """Load an index from disk."""
         self.index.load(path)
 
     def stats(self) -> dict:
-        """Return index statistics."""
         return self.index.stats()
 
     def names(self) -> list:
-        """Return the sorted list of registered names."""
         return self.index.names()
 
     def remove(self, name: str) -> int:
-        """Unregister a person — removes all their faces. Returns the count removed."""
+        """Remove all faces for a person. Returns count removed."""
         return self.index.remove(name)
 
     def __len__(self) -> int:
-        """Number of registered faces."""
         return len(self.index)
 
     def __contains__(self, name: str) -> bool:
-        """`name in ff` — whether this person is registered."""
         return name in self.index
 
     def __repr__(self) -> str:
-        return (f"FaceFlash(registered={len(self.index)}, "
-                f"people={len(self.index.names())})")
+        return f"FaceFlash(faces={len(self.index)}, people={len(self.index.names())})"

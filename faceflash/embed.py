@@ -1,7 +1,4 @@
-"""
-Face embedding — converts a face image to a 512-dim vector using ArcFace (ONNX).
-Downloads the model automatically on first use.
-"""
+"""ArcFace ONNX embedding. Downloads model on first use (~250MB)."""
 
 import logging
 import urllib.request
@@ -16,7 +13,7 @@ MODEL_PATH = MODEL_DIR / "arcface_r100.onnx"
 
 
 def ensure_model():
-    """Download ArcFace ONNX model if not present."""
+    """Download model if missing."""
     if MODEL_PATH.exists():
         return MODEL_PATH
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
@@ -27,7 +24,7 @@ def ensure_model():
 
 
 class FaceEmbedder:
-    """ArcFace embedding model (ONNX). Uses GPU if available, else CPU."""
+    """ArcFace ONNX inference. Picks GPU if available."""
 
     def __init__(self):
         try:
@@ -55,7 +52,7 @@ class FaceEmbedder:
         self.input_shape = self.session.get_inputs()[0].shape  # [1, 3, 112, 112]
 
     def preprocess(self, img: np.ndarray) -> np.ndarray:
-        """Preprocess face image for ArcFace: resize to 112x112, normalize."""
+        """Resize to 112x112, normalize to [-1,1], HWC→NCHW."""
         from PIL import Image
 
         if isinstance(img, np.ndarray):
@@ -74,7 +71,7 @@ class FaceEmbedder:
         return img
 
     def embed(self, face_img: np.ndarray) -> np.ndarray:
-        """Get 512-dim embedding for an aligned face image."""
+        """512-dim L2-normalized embedding from an aligned face."""
         inp = self.preprocess(face_img)
         outputs = self.session.run(None, {self.input_name: inp})
         embedding = outputs[0][0]
@@ -86,7 +83,7 @@ class FaceEmbedder:
         return embedding
 
     def embed_batch(self, face_images: list) -> np.ndarray:
-        """Get embeddings for a batch of face images."""
+        """Batch embed. Just loops for now — no real batching in ONNX CPU."""
         embeddings = []
         for img in face_images:
             embeddings.append(self.embed(img))

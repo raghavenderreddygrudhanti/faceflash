@@ -1,17 +1,9 @@
 """
-Coarse clustering (IVF-style) for sub-linear search.
+IVF-style coarse clustering for sub-linear scan.
 
-The base index does a full Hamming scan — work grows linearly with the database.
-This layer partitions faces into ~sqrt(N) buckets via spherical k-means on the
-ArcFace embeddings. At search time we compare the query against the (few thousand)
-centroids, pick the closest `n_probe` buckets, and scan only those faces. That
-turns an O(N) scan into roughly O(N / n_clusters * n_probe).
-
-Tradeoff: if the true match sits in a bucket we didn't probe, we miss it — so
-recall depends on `n_probe`. More probes → higher recall, slower search.
-
-ArcFace embeddings are L2-normalized, so cosine similarity is a dot product and
-k-means becomes spherical k-means (assign by max dot, re-normalize centroids).
+Partitions faces into ~sqrt(N) buckets via spherical k-means. At query time
+we probe only the closest buckets instead of the full index. More probes =
+higher recall, slower search.
 """
 
 import numpy as np

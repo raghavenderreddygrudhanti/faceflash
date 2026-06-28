@@ -1,27 +1,14 @@
-"""
-Face detection + alignment.
-
-Tries proper 5-point RetinaFace (SCRFD det_10g) detection + alignment via
-`faceflash.align`, which warps each face to the ArcFace template — matching how
-the benchmark embeddings were produced. Falls back to OpenCV Haar + center-crop
-when the detector or its model is unavailable, or when no face is found.
-"""
+"""Face detection. SCRFD 5-point alignment preferred, Haar cascade fallback."""
 import numpy as np
 from PIL import Image
 
 
 def load_image(path: str) -> np.ndarray:
-    """Load an image from a path as an RGB numpy array."""
     return np.array(Image.open(path).convert("RGB"))
 
 
 def detect_and_align(img: np.ndarray) -> np.ndarray:
-    """Detect the largest face and return an aligned 112x112 RGB crop.
-
-    Uses RetinaFace 5-point alignment (best accuracy, matches the benchmark
-    pipeline); falls back to Haar + center-crop if detection is unavailable
-    or finds no face.
-    """
+    """Largest face → 112x112 aligned crop. SCRFD if available, else Haar."""
     try:
         from faceflash.align import detect_and_align as _rf_align
         aligned = _rf_align(img)
@@ -33,7 +20,7 @@ def detect_and_align(img: np.ndarray) -> np.ndarray:
 
 
 def detect_faces(img: np.ndarray) -> list:
-    """Detect all faces and return a list of aligned 112x112 RGB crops."""
+    """All faces in image → list of 112x112 aligned crops."""
     try:
         from faceflash.align import get_detector, align_face
         det = get_detector()
@@ -47,7 +34,7 @@ def detect_faces(img: np.ndarray) -> list:
 
 
 def _detect_haar_fallback(img: np.ndarray) -> np.ndarray:
-    """Fallback: OpenCV Haar cascade + center crop (no 5-point alignment)."""
+    """Haar + center crop when SCRFD isn't available."""
     try:
         import cv2
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
