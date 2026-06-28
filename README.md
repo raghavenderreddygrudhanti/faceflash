@@ -5,7 +5,7 @@
 This is a **compression + packaging** project, not a new search algorithm. The search is a brute-force Hamming scan (same as FAISS `IndexBinaryFlat`) plus a cosine rerank. The reason it works without losing accuracy is that ArcFace embeddings are low-rank, so PCA+ITQ binary codes preserve nearest-neighbor ordering. On general/random vectors this does **not** hold — see [Limitations](#limitations).
 
 - **Same Recall@1 as exact search, ~32× smaller index.** Each 512-float embedding (2,048 bytes) becomes a 64-byte binary code. Verified against FAISS-Flat ground truth on MS1MV2.
-- **Lower per-query latency than HNSW up to ~300K**, because the binary scan fits in cache. Past 500K, HNSW's O(log N) graph wins — the scan is O(N).
+- **Lower per-query latency than HNSW up to ~200K**, because the binary scan fits in cache. From ~300K up, HNSW's O(log N) graph wins — the scan is O(N).
 - **Zero config.** PCA fits automatically after 1,024 samples. No graph to build, no hyperparameters.
 - **Local and offline.** No service, no network. CPU only.
 
@@ -158,7 +158,7 @@ ff.stats()
 
 ## Batch Identification
 
-Process many query faces at once (4.8x faster than one-by-one):
+Process many query faces at once (~8x faster than one-at-a-time at 100K):
 
 ```python
 import numpy as np
@@ -187,7 +187,7 @@ for i, matches in enumerate(results):
 |---|---|
 | **Edge / mobile / IoT** | 6–61 MB index vs 293 MB–2.9 GB for HNSW — fits in device RAM |
 | **Multi-tenant servers** | 100 galleries × 61 MB = 6 GB. HNSW: 100 × 2.9 GB = 290 GB |
-| **10K–300K face databases** | The sweet spot — lower latency *and* less memory than HNSW |
+| **10K–200K face databases** | The latency sweet spot — lower latency *and* less memory than HNSW |
 | **Offline / air-gapped** | Runs on a Raspberry Pi or cheap VPS, no GPU, no network |
 
 **When HNSW is the better choice:**
@@ -288,7 +288,7 @@ All single-query rows are single-threaded. Batched rows use all available cores.
 
 Default **512-bit** config. The **256-bit** config holds the same recall at half the memory and roughly double the single-query latency.
 
-Up to ~300K the binary scan is faster per query than HNSW because it stays in cache. From 500K up, HNSW's O(log N) graph wins on single-query latency while FaceFlash keeps the smaller footprint.
+Up to ~200K the binary scan is faster per query than HNSW because it stays in cache. From ~300K up, HNSW's O(log N) graph wins on single-query latency while FaceFlash keeps the smaller footprint.
 
 ### 1:N Identification - 44,290 Distinct People
 
@@ -401,7 +401,7 @@ ff.search("query.jpg", n_candidates=200)       # per-query override
 
 <img src="https://raw.githubusercontent.com/raghavenderreddygrudhanti/faceflash/main/docs/figures/chart_clustering_tradeoff.png" width="720" alt="Clustering recall/speed tradeoff"/>
 
-<sub><b>IVF Clustering Speedup:</b> 5–8× faster at 500K+ with configurable recall trade-off</sub>
+<sub><b>IVF clustering:</b> ~3–5× faster at 500K at ~88–93% recall — a configurable recall/speed trade-off</sub>
 
 </div>
 
@@ -416,7 +416,7 @@ ff.index.build_clusters(n_probe=16)
 | 500K | 16 | 87.9% | 0.31ms | 5.0x |
 | 500K | 32 | 92.8% | 0.56ms | 2.8x |
 
-Clustering is mainly useful at 500K+ where it delivers 5-8x speedup at ~88-93% recall.
+Clustering is mainly useful at 500K+. At ~88–93% recall it gives ~3–5× speedup (n_probe 16–32). If you accept lower recall it goes higher — ~8× at ~80% recall (n_probe 8), ~12× at ~70% (n_probe 4).
 
 ---
 
@@ -440,7 +440,7 @@ rust/                               # Rust backend (PyO3 + Rayon)
 
 **Why not HNSW internally?** HNSW stores a graph on top of full float vectors (~1.5× raw memory). FaceFlash stores 32–64 bytes per face and mmaps the float vectors from disk, paging only the top ~100 candidates per query. Trade-off: higher single-query latency past 500K, smaller footprint.
 
-**Why Rust + AVX-512?** AVX-512 VPOPCNTDQ processes an entire 512-bit code in one instruction (~3× faster than scalar POPCNT). Combined with Rayon multi-core parallelism (and cache-blocked batching to keep the scan cache-friendly), batched search reaches 10-17× throughput versus single-query serial. Runtime-detected — no user configuration needed.
+**Why Rust + AVX-512?** AVX-512 VPOPCNTDQ processes an entire 512-bit code in one instruction (~3× faster than scalar POPCNT). Combined with Rayon multi-core parallelism (and cache-blocked batching to keep the scan cache-friendly), batched search reaches ~8–16× throughput versus single-query serial. Runtime-detected — no user configuration needed.
 
 ---
 
@@ -482,9 +482,9 @@ bash scripts/runpod_ms1m.sh   # FORCE_EXTRACT=1 for full 85K extraction
 - [x] On-device memory measurement (3.05 MB binary index @100K with 256b)
 
 **v0.3.0 (done)**
-- [x] IVF coarse clustering (2.7-4.9x speedup at scale)
+- [x] IVF coarse clustering (configurable recall/speed trade-off, ~3–5× at 88–93% recall)
 - [x] AVX-512 VPOPCNTDQ — native 512-bit popcount (~3x faster than scalar)
-- [x] Batched search — 17x throughput at 500K-1M (multi-core + VPOPCNTDQ; cache-blocked)
+- [x] Batched search — ~16x throughput at 500K-1M (multi-core + VPOPCNTDQ; cache-blocked)
 - [x] NEON kernels — ARM-optimized (vcntq_u8)
 
 **v1.0.0 — next**
