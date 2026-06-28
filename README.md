@@ -26,10 +26,16 @@ FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ 
 from faceflash import FaceFlash
 
 ff = FaceFlash()
-ff.register_folder("employees/")   # bulk enroll
+
+# Enroll faces — the name you pass is what comes back in search results
+ff.register("Alice", "photos/alice_headshot.jpg")
+ff.register("Bob", "photos/bob_photo.png")
+ff.register_folder("employees/")   # uses subfolder names as identity labels
+
 ff.save("my_index/")
 
-result = ff.search("visitor.jpg")
+# Later: who is this person? (runs face detection + ArcFace + binary search)
+result = ff.search("security_cam_frame.jpg")
 # {"matches": [{"name": "Alice", "confidence": 0.92}], "search_time_ms": 0.4}
 ```
 
@@ -99,11 +105,11 @@ from faceflash import FaceFlash
 
 ff = FaceFlash()  # downloads ArcFace model (~166 MB) on first run
 
-# Register individual faces
+# Register individual faces — "Alice" is the label, the .jpg is the face photo
 ff.register("Alice", "alice.jpg")
 ff.register("Bob", "bob.jpg")
 
-# Identify a face
+# Identify a face — extracts face from image, compares against registered embeddings
 result = ff.search("query.jpg")
 # {"matches": [{"name": "Alice", "confidence": 0.92}], "search_time_ms": 0.4}
 

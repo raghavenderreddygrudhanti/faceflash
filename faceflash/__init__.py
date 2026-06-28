@@ -8,5 +8,7 @@ _logging.getLogger("faceflash").addHandler(_logging.NullHandler())
 from faceflash.engine import FaceFlash
 from faceflash.index import FaceIndex
 from faceflash.pca_quantize import PCABinaryQuantizer, backend_info
+from faceflash.attributes import FaceAttributes, AgeGenderEstimator, EmotionEstimator
 
-__all__ = ["FaceFlash", "FaceIndex", "PCABinaryQuantizer", "backend_info"]
+__all__ = ["FaceFlash", "FaceIndex", "PCABinaryQuantizer", "backend_info",
+           "FaceAttributes", "AgeGenderEstimator", "EmotionEstimator"]
