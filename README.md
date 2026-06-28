@@ -217,7 +217,7 @@ This is why 512 bits is the fastest setting — the entire code fits in one AVX-
 
 ## Is the win the compression or the search?
 
-The search. FaceFlash's Hamming scan is brute force — structurally the same as FAISS `IndexBinaryFlat`. To prove the kernel isn't doing anything special, `benchmarks/bench_compression_isolation.py` runs the **same** PCA+ITQ codes through both FaceFlash's Rust kernel and FAISS `IndexBinaryFlat`, then reranks identically:
+The compression. FaceFlash's Hamming scan is brute force — structurally the same as FAISS `IndexBinaryFlat`. To prove the kernel isn't doing anything special, `benchmarks/bench_compression_isolation.py` runs the **same** PCA+ITQ codes through both FaceFlash's Rust kernel and FAISS `IndexBinaryFlat`, then reranks identically:
 
 | Method (same codes) | Recall@1 | Avg latency |
 |---|---|---|
@@ -238,7 +238,7 @@ FaceFlash's recall, latency, throughput, and memory are measured. Competitor rec
 | **Dataset** | MS1MV2 — 645,019 ArcFace embeddings, 44,291 distinct identities |
 | **Embedding** | ArcFace ONNX (w600k_r50), 512 dimensions, L2-normalized |
 | **Hardware** | AMD EPYC 9355 (32 cores / 128 threads), AVX-512 VPOPCNTDQ enabled |
-| **Competitors** | HNSWLIB 0.8+, FAISS 1.7+, USearch 2.x |
+| **Competitors** | HNSWLIB 0.8+, FAISS 1.7+, USearch 2.x, ScaNN |
 | **Ground truth** | Exact brute-force cosine argmax (FAISS-Flat) |
 | **Timing** | `time.perf_counter()` per query, 10 warmup excluded |
 | **Recall metric** | Recall@1 — fraction of queries where the true nearest neighbor is rank-1 |
