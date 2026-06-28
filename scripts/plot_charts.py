@@ -195,7 +195,8 @@ def chart_rank1():
         if "exact" in method.lower():
             names.append("FAISS-Flat\n(exact)")
             cols.append(MUTED)
-            mem_labels.append("94 MB")
+            # exact float index = gallery * 512 dims * 4 bytes (computed, not hardcoded)
+            mem_labels.append(f"{d['n_gallery_identities'] * 512 * 4 / 1024 / 1024:.1f} MB")
         elif "256" in method:
             names.append("FaceFlash\n(256b)")
             cols.append("#06d6a0")  # lighter teal
@@ -233,7 +234,7 @@ def chart_rank1():
     ax.set_ylim(0, 108)
     ax.grid(axis="x", visible=False)
     titled(ax, f"FaceFlash ties exact search on {d['n_gallery_identities']:,} people",
-           f"Same accuracy, 35x less memory · MS1MV2, 1:N identification")
+           f"Same accuracy, 32x smaller codes · MS1MV2, 1:N identification")
     save(fig, "chart_rank1_tie")
 
 
