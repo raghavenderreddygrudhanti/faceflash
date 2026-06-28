@@ -385,7 +385,7 @@ Pick a config that matches your deployment:
 | Ultra-compact (mobile/IoT) | n_bits=128, n_candidates=500 | 99.4% | 16 bytes | Minimum RAM |
 | Balanced | n_bits=256, n_candidates=100 | 100% | 32 bytes | Good default |
 | **Default (fastest)** | n_bits=512, n_candidates=100 | **100%** | 64 bytes | One AVX-512 instruction |
-| Edge (minimize disk reads) | n_bits=512, n_candidates=50 | 99.5% | 64 bytes | -- |
+| Edge (minimize disk reads) | n_bits=512, n_candidates=50 | 100% | 64 bytes | Half the candidate disk reads of the default |
 
 ```python
 ff = FaceFlash(n_bits=128, n_candidates=500)   # mobile/IoT
@@ -440,7 +440,7 @@ rust/                               # Rust backend (PyO3 + Rayon)
 
 **Why not HNSW internally?** HNSW stores a graph on top of full float vectors (~1.5× raw memory). FaceFlash stores 32–64 bytes per face and mmaps the float vectors from disk, paging only the top ~100 candidates per query. Trade-off: higher single-query latency past 500K, smaller footprint.
 
-**Why Rust + AVX-512?** AVX-512 VPOPCNTDQ processes an entire 512-bit code in one instruction (~3× faster than scalar POPCNT). Combined with Rayon multi-core parallelism (and cache-blocked batching to keep the scan cache-friendly), batched search reaches ~8–16× throughput versus single-query serial. Runtime-detected, so no user configuration is needed.
+**Why Rust + AVX-512?** AVX-512 VPOPCNTDQ counts the set bits of an entire 512-bit code in one instruction (where a scalar path needs several 64-bit POPCNTs). Combined with Rayon multi-core parallelism (measured at up to ~5.6× over single-threaded) and cache-blocked batching, batched search reaches ~8–16× throughput versus single-query serial. Runtime-detected, so no user configuration is needed.
 
 ---
 
@@ -448,7 +448,7 @@ rust/                               # Rust backend (PyO3 + Rayon)
 
 - **Single-query at 1M+:** O(N) linear scan; HNSW is 4.4x faster per single query at 1M. Batched path ties.
 - **Memory during build:** holds all float vectors in RAM. The compression savings apply after `save()` / `load()`, when float vectors move to mmap'd disk.
-- **AVX-512 VPOPCNTDQ:** the ~3× kernel speedup requires Ice Lake / Zen 4+ / EPYC 9004+. Older CPUs fall back to scalar POPCNT automatically.
+- **AVX-512 VPOPCNTDQ:** the one-instruction-per-code kernel requires Ice Lake / Zen 4+ / EPYC 9004+. Older CPUs fall back to AVX2 or scalar POPCNT automatically.
 - **Rerank I/O:** pages ~100 float rows from disk per query. Invisible on NVMe; adds latency on slow storage.
 
 ---
@@ -483,7 +483,7 @@ bash scripts/runpod_ms1m.sh   # FORCE_EXTRACT=1 for full 85K extraction
 
 **v0.3.0 (done)**
 - [x] IVF coarse clustering (configurable recall/speed trade-off, ~3–5× at 88–93% recall)
-- [x] AVX-512 VPOPCNTDQ — native 512-bit popcount (~3x faster than scalar)
+- [x] AVX-512 VPOPCNTDQ — native 512-bit popcount (one instruction per code)
 - [x] Batched search — ~16x throughput at 500K-1M (multi-core + VPOPCNTDQ; cache-blocked)
 - [x] NEON kernels — ARM-optimized (vcntq_u8)
 
