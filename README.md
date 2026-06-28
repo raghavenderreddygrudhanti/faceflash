@@ -1,23 +1,18 @@
-# ⚡ FaceFlash
+# FaceFlash
 
-**FaceFlash searches 1M faces in 61 MB of RAM. HNSW needs 2.9 GB, USearch needs 2.5 GB, FAISS needs 1.9 GB — for the same 100% recall.**
+**Face search that fits 1M faces in 61 MB of RAM, at the same recall as exact brute-force cosine.** Stores ArcFace embeddings as 512-bit binary codes instead of full float vectors, then reranks the top candidates with exact cosine to recover accuracy.
 
-FaceFlash is a Rust face search engine with Python bindings, built on **PCA+ITQ binary quantization** — a learned hash that preserves identity information with zero recall loss and no separate training phase.
+This is a **compression + packaging** project, not a new search algorithm. The search is a brute-force Hamming scan (same as FAISS `IndexBinaryFlat`) plus a cosine rerank. The reason it works without losing accuracy is that ArcFace embeddings are low-rank, so PCA+ITQ binary codes preserve nearest-neighbor ordering. On general/random vectors this does **not** hold — see [Limitations](#limitations).
 
-- **100% Recall@1, 48–96× less memory.** On the MS1MV2 benchmark (44,291 identities), FaceFlash held 100% Recall@1 at every scale from 100K to 1M while using **48× less index memory than HNSWLIB** at the default 512-bit config (~42× vs USearch, ~32× vs FAISS-Flat) — and **96× less** at the 256-bit compact config (100% recall, ~2× single-query latency).
-- **Faster than HNSW at 100K.** On the same benchmark, FaceFlash single-query latency was 0.30ms vs HNSWLIB's 0.60ms (2× faster). Batched throughput: 27,661 qps vs 5,813 qps (4.8× faster). Both at 100% recall.
-- **AVX-512 VPOPCNTDQ + NEON.** Hand-written SIMD kernels process one 512-bit face code per instruction (~3× faster than scalar). Multi-core batched search measured at 10–17× throughput vs single-query serial on the same hardware.
-- **Zero-config indexing.** Add faces, they're indexed — PCA fits automatically after 1,024 samples, no hyperparameter tuning, no rebuilds as the gallery grows.
-- **Pure local.** No managed service, no data leaving your machine. Pair with any ArcFace model for a fully air-gapped face search stack.
+- **Same Recall@1 as exact search, ~32× smaller index.** Each 512-float embedding (2,048 bytes) becomes a 64-byte binary code. Verified against FAISS-Flat ground truth on MS1MV2.
+- **Lower per-query latency than HNSW up to ~300K**, because the binary scan fits in cache. Past 500K, HNSW's O(log N) graph wins — the scan is O(N).
+- **Zero config.** PCA fits automatically after 1,024 samples. No graph to build, no hyperparameters.
+- **Local and offline.** No service, no network. CPU only.
 
 <div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
 [![PyPI](https://img.shields.io/pypi/v/faceflash.svg)](https://pypi.org/project/faceflash/)
-[![Downloads](https://img.shields.io/pypi/dm/faceflash.svg)](https://pypi.org/project/faceflash/)
-[![Libraries.io](https://img.shields.io/librariesio/release/pypi/faceflash)](https://libraries.io/pypi/faceflash)
-[![Rust AVX-512](https://img.shields.io/badge/backend-Rust%20AVX--512%20VPOPCNTDQ-orange.svg)](rust/)
 [![CI](https://github.com/raghavenderreddygrudhanti/faceflash/actions/workflows/ci.yml/badge.svg)](https://github.com/raghavenderreddygrudhanti/faceflash/actions)
 
 </div>
@@ -30,44 +25,45 @@ ff = FaceFlash()
 # Enroll faces — the name you pass is what comes back in search results
 ff.register("Alice", "photos/alice_headshot.jpg")
 ff.register("Bob", "photos/bob_photo.png")
-ff.register_folder("employees/")   # uses subfolder names as identity labels
 
 ff.save("my_index/")
 
-# Later: who is this person? (runs face detection + ArcFace + binary search)
+# Identify: detects the face, extracts the ArcFace embedding, searches in
+# binary space, reranks with cosine. The filename is irrelevant — matching
+# happens on the face embedding.
 result = ff.search("security_cam_frame.jpg")
 # {"matches": [{"name": "Alice", "confidence": 0.92}], "search_time_ms": 0.4}
 ```
 
 ---
 
-## The Problem
+## What This Is and Isn't
 
-Most face search libraries force a trade-off:
+**Is:** a way to store and search face embeddings in ~32× less memory than full float vectors, with a one-line API that handles detection → embedding → quantization → search.
 
-- **HNSW** is fast and accurate — but consumes **2.9 GB of RAM at 1M faces**
-- **ScaNN / USearch** are blazing fast — but drop to **94–99% recall**
-- **FAISS-Flat** is exact — but is **10× slower** at scale
+**Isn't:** a new ANN algorithm. The Hamming scan is brute force. You could reproduce the same recall with `faiss.PCAMatrix` + `IndexBinaryFlat` + manual reranking. FaceFlash just packages that pipeline and tunes the SIMD kernel.
 
-FaceFlash breaks this trade-off. It compresses each face into a **64-byte binary fingerprint** using PCA + ITQ quantization, scans them with a single AVX-512 VPOPCNTDQ instruction, then re-ranks only the top candidates with exact cosine similarity. The result: exact accuracy at a fraction of the memory.
+The comparison against HNSW below is a *system-level* one — "which tool do I reach for to search faces" — not a claim that the search algorithm is novel. HNSW stores full floats plus a graph; FaceFlash stores 64-byte codes. That's the whole reason the memory differs.
 
 ---
 
 ## At a Glance
 
-| | FaceFlash | HNSWLIB | USearch | ScaNN | FAISS-Flat |
-|---|---|---|---|---|---|
-| **Recall@1** | **100%** | 100% | 99.5% | 98.3% | 100% |
-| **Memory @ 100K** | **3.05 MB** | 293 MB | 254 MB | 12 MB | 195 MB |
-| **Memory @ 500K** | **15.3 MB** | 1,465 MB | 1,270 MB | 61 MB | 977 MB |
-| **Memory @ 1M** | **30.5 MB** | 2,930 MB | 2,539 MB | 122 MB | 1,953 MB |
-| **Latency @ 100K** | **0.30ms** | 0.60ms | 0.17ms | 0.10ms | 4.90ms |
-| **Batched QPS @ 100K** | 27,661 | 5,813 | **137,264** | — | — |
-| **Index build** | Auto (PCA fit) | Build graph | Build graph | Partition | None |
+All FaceFlash numbers use the default **512-bit** config. Memory is the in-RAM binary index (float vectors are mmap'd from disk for reranking — see [Limitations](#limitations)).
 
-> Tested on MS1MV2 (44,291 identities, 645,019 embeddings). Hardware: AMD EPYC 9355, 128 threads, AVX-512 active.
+| | FaceFlash | HNSWLIB | USearch | FAISS-Flat |
+|---|---|---|---|---|
+| **Recall@1** | **100%** | 100% | 99.5% | 100% (ground truth) |
+| **Index memory @ 100K** | **6.1 MB** | 293 MB | 254 MB | 195 MB |
+| **Index memory @ 1M** | **61 MB** | 2,930 MB | 2,539 MB | 1,953 MB |
+| **Single-query latency @ 100K** | **0.30ms** | 0.60ms | 0.17ms | 4.90ms |
+| **Single-query latency @ 1M** | 2.95ms | 0.66ms | — | — |
+
+> "Recall@1 = 100%" means FaceFlash returns the same nearest neighbor as exact brute-force cosine (FAISS-Flat) on the same embeddings — the binary compression is lossless for retrieval. It does **not** mean ArcFace itself is perfect; embedding-model limitations (pose, occlusion, age) are upstream and unaffected.
 >
-> **Memory = binary index only.** Float vectors for cosine reranking are mmap'd from disk after `save()`/`load()` — only ~100 candidate rows are paged per query. See [Limitations](#limitations).
+> Competitor memory is the standard estimate (float vectors + index overhead; HNSW ≈ 1.5× raw). FaceFlash memory is measured. See [Benchmark Methodology](#benchmark-methodology).
+>
+> A **256-bit** config halves the index (3.05 MB @ 100K, 30.5 MB @ 1M) at the same recall, trading ~2× single-query latency.
 
 <div align="center">
 
@@ -187,19 +183,17 @@ for i, matches in enumerate(results):
 
 ## Is FaceFlash Right for You?
 
-| Scenario | Why FaceFlash wins |
+| Scenario | Why FaceFlash fits |
 |---|---|
-| **Edge / mobile / IoT** | 3–30 MB vs 293–2,930 MB for HNSW — fits in device RAM |
-| **Multi-tenant servers** | 100 galleries x 30 MB = 3 GB. HNSW: 100 x 1.5 GB = 150 GB |
-| **Batch dedup / watchlists** | 4.8x faster than HNSW batched at 100K; 1.9x at 500K |
-| **100% recall is non-negotiable** | FaceFlash hits 100% at every scale; USearch drops to 94-99% |
-| **Budget / offline / air-gapped** | Runs on Raspberry Pi, cheap VPS, phones — no GPU, no network |
-| **10K-500K face databases** | The sweet spot: faster AND less memory than HNSW |
+| **Edge / mobile / IoT** | 6–61 MB index vs 293 MB–2.9 GB for HNSW — fits in device RAM |
+| **Multi-tenant servers** | 100 galleries × 61 MB = 6 GB. HNSW: 100 × 2.9 GB = 290 GB |
+| **10K–300K face databases** | The sweet spot — lower latency *and* less memory than HNSW |
+| **Offline / air-gapped** | Runs on a Raspberry Pi or cheap VPS, no GPU, no network |
 
 **When HNSW is the better choice:**
-- You need <0.3ms single-query latency at >500K faces and have gigabytes of RAM to spare
-- Your database exceeds 2M faces (HNSW's O(log N) pulls clearly ahead)
-- You need 100K+ batched QPS regardless of memory (USearch wins there)
+- More than ~500K faces and you need sub-millisecond single-query latency (HNSW's O(log N) beats the linear scan)
+- You have the RAM to spare and latency matters more than footprint
+- You need a battle-tested index with years of production hardening
 
 ---
 
@@ -218,6 +212,20 @@ Each face is compressed into a **64-byte binary fingerprint**:
 5. **Cosine rerank** runs exact similarity on only the top ~100 candidates
 
 This is why 512 bits is the fastest setting — the entire code fits in one AVX-512 register.
+
+---
+
+## Is the win the compression or the search?
+
+The search. FaceFlash's Hamming scan is brute force — structurally the same as FAISS `IndexBinaryFlat`. To prove the kernel isn't doing anything special, `benchmarks/bench_compression_isolation.py` runs the **same** PCA+ITQ codes through both FaceFlash's Rust kernel and FAISS `IndexBinaryFlat`, then reranks identically:
+
+| Method (same codes) | Recall@1 | Avg latency |
+|---|---|---|
+| FaceFlash kernel + cosine rerank | identical | comparable |
+| FAISS `IndexBinaryFlat` + cosine rerank | identical | comparable |
+| FAISS `IndexBinaryFlat`, no rerank | much lower | — |
+
+The recall comes from the PCA+ITQ compression preserving nearest-neighbor ordering on face embeddings, plus the cosine rerank. Not from the search algorithm. Run it yourself to confirm.
 
 ---
 
