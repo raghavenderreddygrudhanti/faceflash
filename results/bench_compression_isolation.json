@@ -1,0 +1,24 @@
+{
+  "config": {
+    "n_db": 100000,
+    "n_queries": 500,
+    "k": 1,
+    "n_bits": 512,
+    "n_candidates": 100,
+    "dim": 512
+  },
+  "faceflash": {
+    "recall_at_1": 0.376,
+    "avg_latency_ms": 0.419,
+    "p99_latency_ms": 0.5
+  },
+  "faiss_binary_rerank": {
+    "recall_at_1": 0.374,
+    "avg_latency_ms": 0.406,
+    "p99_latency_ms": 0.473
+  },
+  "faiss_binary_only": {
+    "recall_at_1": 0.018,
+    "avg_latency_ms": 0.416
+  }
+}
