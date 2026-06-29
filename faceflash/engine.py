@@ -166,6 +166,30 @@ class FaceFlash:
             "time_ms": round(total_time * 1000, 2),
         }
 
+    def scan_video(self, video_path: str, sample_fps: float = 1.0,
+                   threshold: float = 0.4, merge_gap_s: float = 2.0,
+                   names: Optional[list] = None, progress: bool = True) -> dict:
+        """Find every registered person in a video, with timestamps.
+
+        Samples the video at `sample_fps`, detects and identifies faces in each
+        sampled frame, and merges consecutive hits into appearance intervals.
+
+        Returns {name: [appearance_dict, ...]} where each appearance has
+        start/end timestamps, duration, and best confidence.
+        """
+        from faceflash.video import scan_video as _scan
+        result = _scan(self, video_path, sample_fps=sample_fps,
+                       threshold=threshold, merge_gap_s=merge_gap_s,
+                       names=names, progress=progress)
+        return {name: [a.to_dict() for a in apps] for name, apps in result.items()}
+
+    def find_person(self, name: str, video_path: str,
+                    sample_fps: float = 1.0, threshold: float = 0.4) -> list:
+        """Find one specific person in a video. Returns their appearances."""
+        result = self.scan_video(video_path, sample_fps=sample_fps,
+                                 threshold=threshold, names=[name])
+        return result.get(name, [])
+
     def save(self, path: str):
         self.index.save(path)
 

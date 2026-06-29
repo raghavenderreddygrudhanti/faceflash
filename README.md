@@ -156,6 +156,49 @@ ff.stats()
 #  'binary_memory_mb': 0.0, 'resident_memory_mb': 0.0, ...}
 ```
 
+---
+
+## Video Timeline Scan
+
+Find every timestamp a registered person appears in a video. Samples frames,
+detects and identifies faces, and merges consecutive hits into appearance
+intervals — so you get "Alice: 0:12–0:18, 1:45–2:03" instead of raw frames.
+
+```python
+from faceflash import FaceFlash
+
+ff = FaceFlash()
+ff.register("Alice", "alice.jpg")
+ff.register("Bob", "bob.jpg")
+
+# Scan an hour of footage at 1 frame/sec
+timeline = ff.scan_video("meeting.mp4", sample_fps=1.0)
+# {
+#   "Alice": [
+#     {"start_timestamp": "0:12", "end_timestamp": "0:18", "duration_s": 6.0,
+#      "best_confidence": 0.94, "hits": 6},
+#     ...
+#   ],
+#   "Bob": [...]
+# }
+
+# Or find one specific person
+alice_appearances = ff.find_person("Alice", "cctv.mp4", sample_fps=2.0)
+```
+
+CLI:
+
+```bash
+python examples/video_timeline.py --person Alice alice.jpg --video meeting.mp4 --fps 1
+```
+
+Knobs:
+- `sample_fps` — frames per second to check. Lower = faster scan, coarser timeline. 1 fps is plenty for "who appears when"; raise it for short clips or fast cuts.
+- `merge_gap_s` — hits within this gap (default 2s) merge into one appearance, bridging brief dropouts (blink, head turn, occlusion).
+- `threshold` — min match confidence (default 0.4).
+
+Needs OpenCV (`pip install opencv-python`). Scan time is roughly `(video_seconds × sample_fps) × per-frame detection+search` — about 2–3 minutes for an hour of footage at 1 fps on CPU.
+
 ## Batch Identification
 
 Process many query faces at once (~8x faster than one-at-a-time at 100K):
@@ -486,6 +529,9 @@ bash scripts/runpod_ms1m.sh   # FORCE_EXTRACT=1 for full 85K extraction
 - [x] AVX-512 VPOPCNTDQ — native 512-bit popcount (one instruction per code)
 - [x] Batched search — ~16x throughput at 500K-1M (multi-core + VPOPCNTDQ; cache-blocked)
 - [x] NEON kernels — ARM-optimized (vcntq_u8)
+
+**v0.4.0 (done)**
+- [x] Video timeline scan — find when each registered person appears in a video
 
 **v1.0.0 — next**
 - [ ] Stable public API (no breaking changes)
