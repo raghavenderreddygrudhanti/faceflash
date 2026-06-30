@@ -1,34 +1,33 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-# FaceFlash — MS1MV2 Standalone Pipeline (85K identities)
+# FaceFlash — MS1MV2 Reproducible Benchmark (85K identities, 1M+ embeddings)
 # ═══════════════════════════════════════════════════════════════════════════
 #
-# SELF-CONTAINED: clones, installs, builds, downloads the model, gets MS1MV2
-# from Kaggle, extracts embeddings, and benchmarks — all from this ONE file.
-# (Every setup step is idempotent: it skips whatever is already done, so it's
-#  safe to run after runpod_full.sh too.)
+# SELF-CONTAINED: clones the public repo, installs deps, builds the Rust
+# backend, pulls pre-extracted embeddings from HuggingFace (public), and
+# runs the full benchmark suite — all from this ONE file. No tokens needed.
 #
-# REQUIRES (set in your terminal — NEVER commit these):
-#   export GITHUB_TOKEN=<your-github-token>     # private repo + push results
-#   export HF_TOKEN=<your-hf-token>             # only if the HF dataset is PRIVATE
-#   export HF_EMB_REPO=<user>/<dataset>         # HF embeddings repo (optional; has a default)
-#   export KAGGLE_USERNAME=<your-kaggle-username>   # only if embeddings NOT on HF
-#   export KAGGLE_KEY=<your-kaggle-key>             # (HF pull skips Kaggle + extraction)
+# ONE COMMAND on a fresh RunPod / cloud VM / Linux box:
 #
-# FULL 85K RUN (GPU pod): force a fresh extraction of ALL ~85K identities.
-# Images come from YOUR HuggingFace first (HF_IMG_REPO), Kaggle as fallback:
+#   git clone https://github.com/raghavenderreddygrudhanti/faceflash.git /workspace/faceflash \
+#     && bash /workspace/faceflash/scripts/runpod_ms1m.sh
+#
+# That's it. No tokens, no API keys, no GPU required.
+# Embeddings are pulled from a PUBLIC HuggingFace dataset (~800 MB download).
+# Time: ~5-15 min on a CPU pod.
+#
+# ─── OPTIONAL (for maintainers / re-extraction) ──────────────────────────
+#
+# FORCE_EXTRACT=1 — re-extract ALL ~85K identities from raw MS1MV2 images.
+#   Needs a GPU pod + either HF_IMG_REPO or Kaggle credentials:
 #   export FORCE_EXTRACT=1
-#   export HF_IMG_REPO=<user>/<image-dataset>    # preferred — no 16GB Kaggle dl
-#   export HF_TOKEN=hf_xxx(write)                 # to upload the new embeddings
-#   # (or, fallback) export KAGGLE_USERNAME=... KAGGLE_KEY=...
-#   (run takes ~60-90 min; uploads new 85K embeddings to HF for future runs)
+#   export KAGGLE_USERNAME=<user> KAGGLE_KEY=<key>   # image source
+#   export HF_TOKEN=hf_xxx                           # to upload new embeddings
+#   (takes ~60-90 min)
 #
-# ONE command on a fresh RunPod terminal (HF public → no HF_TOKEN needed):
-#   export GITHUB_TOKEN=ghp_xxx
-#   export HF_TOKEN=hf_xxx HF_EMB_REPO=raghavenderreddy1212/faceflash-embeddings   # if private
-#   git clone https://${GITHUB_TOKEN}@github.com/raghavenderreddygrudhanti/faceflash.git /workspace/faceflash && bash /workspace/faceflash/scripts/runpod_ms1m.sh
+# GITHUB_TOKEN — only needed if you want the script to push results back to
+#   the repo (maintainer workflow). Public users just get results locally.
 #
-# Time: ~5-15 min if embeddings pulled from HF (no GPU needed); ~60-90 min if extracting
 # ═══════════════════════════════════════════════════════════════════════════
 set +e  # keep going on errors; critical setup steps exit explicitly
 
@@ -313,18 +312,21 @@ log ""
 # ─────────────────────────────────────────────────────────────────────────
 # Step 5: Commit + push (optional) + print results folder
 # ─────────────────────────────────────────────────────────────────────────
-log "  Committing MS1MV2 results + charts..."
-git config user.email "raghavenderreddy1212@gmail.com"
-git config user.name "Raghavender Grudhanti"
-git add results/ docs/figures/ 2>/dev/null || true
-
-if ! git diff --cached --quiet 2>/dev/null; then
-    git commit -q -m "bench: MS1MV2 results + charts — ANN + 1:N + clustering + SIMD (${RUN_TS})" || true
-    if [ -n "$GITHUB_TOKEN" ]; then
+# Commit + push is OPTIONAL — only if GITHUB_TOKEN is set (maintainer workflow).
+# Public users just get the results locally in results/ and the tarball.
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    log "  GITHUB_TOKEN set → committing and pushing results..."
+    git config user.email "bench-bot@faceflash" 2>/dev/null
+    git config user.name "FaceFlash Benchmark Bot" 2>/dev/null
+    git add results/ docs/figures/ 2>/dev/null || true
+    if ! git diff --cached --quiet 2>/dev/null; then
+        git commit -q -m "bench: MS1MV2 results + charts — ANN + 1:N + clustering + SIMD (${RUN_TS})" || true
         git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REMOTE_SLUG}.git"
+        CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+        git push origin "HEAD:${CUR_BRANCH}" && log "  ✓ Pushed to GitHub (${CUR_BRANCH})" || log "  ✗ Push failed (results still saved locally)"
     fi
-    CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-    git push origin "HEAD:${CUR_BRANCH}" && log "  ✓ Pushed to GitHub (${CUR_BRANCH})" || log "  ✗ Push failed (results still saved locally)"
+else
+    log "  Results saved locally (set GITHUB_TOKEN to auto-push to the repo)"
 fi
 
 BUNDLE="${WORKDIR:-/workspace}/faceflash_ms1m_results_${RUN_TS}.tar.gz"
