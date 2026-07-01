@@ -15,6 +15,14 @@ data/
 # OS junk
 .DS_Store
 Thumbs.db
+# IDE / tool artifacts
+.agents/
+skills-lock.json
+notebooks/
+# Built wheels (publish to PyPI, not git)
+dist/
+# Private notes
+LAUNCH_POSTS.md
 
 # Temporary/stale result folders
 results 2/
