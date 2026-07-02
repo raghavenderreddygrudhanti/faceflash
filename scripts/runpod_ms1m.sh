@@ -52,13 +52,8 @@ mkdir -p "$WORKDIR" 2>/dev/null || WORKDIR="$HOME"
 cd "$WORKDIR"
 
 if [ ! -d "faceflash" ]; then
-    if [ -n "$GITHUB_TOKEN" ]; then
-        log "  Cloning private repo..."
-        git clone "https://${GITHUB_TOKEN}@github.com/${REMOTE_SLUG}.git" || { log "  ✗ clone failed"; exit 1; }
-    else
-        log "  ✗ Private repo needs a token. Run: export GITHUB_TOKEN=ghp_xxx (scope: repo)"
-        exit 1
-    fi
+    log "  Cloning public repo..."
+    git clone "https://github.com/${REMOTE_SLUG}.git" || { log "  ✗ clone failed"; exit 1; }
 else
     log "  Repo present — pulling latest..."
     (cd faceflash && git pull 2>/dev/null)
