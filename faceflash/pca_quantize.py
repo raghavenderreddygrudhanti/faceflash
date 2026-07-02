@@ -141,10 +141,12 @@ def hamming_topk_numpy(query_code: np.ndarray, database_codes: np.ndarray,
     makes both backends return the identical candidate set, so results don't
     depend on which backend is installed.
     """
+    n = len(database_codes)
+    k = min(k, n)
+    if k <= 0:
+        return np.empty(0, dtype=np.intp)
     xor = np.bitwise_xor(database_codes, query_code.reshape(1, -1))
     dists = _POPCOUNT_TABLE[xor].sum(axis=1)
-    n = len(dists)
-    k = min(k, n)
     key = dists.astype(np.int64) * n + np.arange(n, dtype=np.int64)
     idx = np.argpartition(key, k - 1)[:k]
     return idx[np.argsort(key[idx])].astype(np.intp)

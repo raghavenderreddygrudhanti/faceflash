@@ -27,7 +27,10 @@ def detect_faces(img: np.ndarray) -> list:
         if det is not None:
             boxes, kps = det.detect(img)
             if len(boxes):
-                return [align_face(img, kps[i]) for i in range(len(boxes))]
+                faces = [align_face(img, kps[i]) for i in range(len(boxes))]
+                faces = [f for f in faces if f is not None]
+                if faces:
+                    return faces
     except Exception:
         pass
     return [_detect_haar_fallback(img)]

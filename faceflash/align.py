@@ -166,6 +166,9 @@ def align_face(img_rgb: np.ndarray, landmarks: np.ndarray) -> np.ndarray:
     import cv2
     M, _ = cv2.estimateAffinePartial2D(
         landmarks.astype(np.float32), ARCFACE_TEMPLATE, method=cv2.LMEDS)
+    if M is None:
+        # Degenerate landmarks (collinear/duplicate points) — no transform
+        return None
     return cv2.warpAffine(img_rgb, M, (112, 112), borderValue=0.0)
 
 

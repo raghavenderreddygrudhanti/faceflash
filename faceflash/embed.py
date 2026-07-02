@@ -1,4 +1,4 @@
-"""ArcFace ONNX embedding. Downloads model on first use (~250MB)."""
+"""ArcFace ONNX embedding. Downloads model on first use (~166MB)."""
 
 import logging
 import urllib.request
@@ -7,17 +7,24 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-MODEL_URL = "https://huggingface.co/onnx-community/arcface/resolve/main/arcface_r100.onnx"
+# w600k_r50 — the exact model every benchmark number was measured with.
+MODEL_URL = ("https://huggingface.co/public-data/insightface/resolve/main/"
+             "models/buffalo_l/w600k_r50.onnx")
 MODEL_DIR = Path.home() / ".faceflash" / "models"
-MODEL_PATH = MODEL_DIR / "arcface_r100.onnx"
+MODEL_PATH = MODEL_DIR / "w600k_r50.onnx"
+# Older installs (and the RunPod script) cached the same weights under a
+# misleading name; reuse them instead of re-downloading 166MB.
+_LEGACY_MODEL_PATH = MODEL_DIR / "arcface_r100.onnx"
 
 
 def ensure_model():
     """Download model if missing."""
     if MODEL_PATH.exists():
         return MODEL_PATH
+    if _LEGACY_MODEL_PATH.exists():
+        return _LEGACY_MODEL_PATH
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info("Downloading ArcFace model (~250MB)...")
+    logger.info("Downloading ArcFace model (~166MB)...")
     urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
     logger.info("Saved model to %s", MODEL_PATH)
     return MODEL_PATH
@@ -83,8 +90,32 @@ class FaceEmbedder:
         return embedding
 
     def embed_batch(self, face_images: list) -> np.ndarray:
-        """Batch embed. Just loops for now — no real batching in ONNX CPU."""
-        embeddings = []
-        for img in face_images:
-            embeddings.append(self.embed(img))
-        return np.array(embeddings)
+        """Embed many aligned faces in one ONNX call.
+
+        Stacks preprocessed images into one (N, 3, 112, 112) tensor. Falls
+        back to per-image inference if the model's batch axis is fixed at 1.
+        """
+        if not face_images:
+            return np.empty((0, 512), dtype=np.float32)
+
+        batch_dim = self.input_shape[0]
+        if isinstance(batch_dim, int) and batch_dim == 1:
+            return np.array([self.embed(img) for img in face_images])
+
+        # CoreML compiles per input shape, so varying batch sizes trigger
+        # recompilation and stacked inference comes out ~5x SLOWER than the
+        # loop (measured on M-series). Batch only on CPU/CUDA providers.
+        if self.session.get_providers()[0] == "CoreMLExecutionProvider":
+            return np.array([self.embed(img) for img in face_images])
+
+        inp = np.concatenate([self.preprocess(img) for img in face_images], axis=0)
+        try:
+            out = self.session.run(None, {self.input_name: inp})[0]
+        except Exception:
+            # Some exports declare a symbolic batch dim but only accept N=1
+            return np.array([self.embed(img) for img in face_images])
+
+        norms = np.linalg.norm(out, axis=1, keepdims=True)
+        if np.any(norms < 1e-10):
+            raise ValueError("Face embedding has zero norm (degenerate face detection)")
+        return out / norms

@@ -100,7 +100,7 @@ class FaceFlash:
 
         # Age/gender filtering on the query face
         query_attrs = None
-        if with_attributes or age_filter or min_age or max_age:
+        if with_attributes or age_filter or min_age is not None or max_age is not None:
             query_attrs = self.attributes.analyze(face)
             # Apply age filters — skip search entirely if query doesn't pass
             if age_filter == "adult" and query_attrs["age"] < 18:
@@ -109,10 +109,10 @@ class FaceFlash:
             if age_filter == "child" and query_attrs["age"] >= 18:
                 return {"matches": [], "filtered": "query is adult", "attributes": query_attrs,
                         "time_ms": round((time.perf_counter() - start) * 1000, 2)}
-            if min_age and query_attrs["age"] < min_age:
+            if min_age is not None and query_attrs["age"] < min_age:
                 return {"matches": [], "filtered": f"age {query_attrs['age']} below min_age {min_age}",
                         "attributes": query_attrs, "time_ms": round((time.perf_counter() - start) * 1000, 2)}
-            if max_age and query_attrs["age"] > max_age:
+            if max_age is not None and query_attrs["age"] > max_age:
                 return {"matches": [], "filtered": f"age {query_attrs['age']} above max_age {max_age}",
                         "attributes": query_attrs, "time_ms": round((time.perf_counter() - start) * 1000, 2)}
 

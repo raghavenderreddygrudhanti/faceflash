@@ -103,9 +103,9 @@ log "  ✓ Rust backend ready (freshly built)"
 # ArcFace model
 MODEL_DIR="$HOME/.faceflash/models"
 mkdir -p "$MODEL_DIR"
-if [ ! -f "$MODEL_DIR/arcface_r100.onnx" ]; then
+if [ ! -f "$MODEL_DIR/w600k_r50.onnx" ]; then
     log "  Downloading ArcFace model (~166MB)..."
-    curl -sL -o "$MODEL_DIR/arcface_r100.onnx" \
+    curl -sL -o "$MODEL_DIR/w600k_r50.onnx" \
         "https://huggingface.co/public-data/insightface/resolve/main/models/buffalo_l/w600k_r50.onnx"
 fi
 log "  ✓ Setup complete"
