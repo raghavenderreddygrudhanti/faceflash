@@ -1,11 +1,12 @@
 """
-Sync embeddings with the HuggingFace dataset (private).
+Sync embeddings with the HuggingFace dataset (public, ungated).
 
   download  — pull precomputed embeddings into data/ (skip Kaggle + extraction)
   upload    — push newly extracted embeddings back to HF for future runs
 
 Repo: raghavenderreddy1212/faceflash-embeddings (dataset).
-Needs HF_TOKEN in the environment (read for download, write for upload).
+Download needs no token (the dataset is public). Upload needs HF_TOKEN
+with write access.
 
     python scripts/hf_sync.py download --files ms1m_embeddings.npy ms1m_labels.npy
     python scripts/hf_sync.py upload   --files ms1m_embeddings.npy ms1m_labels.npy
