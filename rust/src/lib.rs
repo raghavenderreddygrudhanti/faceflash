@@ -270,8 +270,10 @@ fn hamming_topk<'py>(
         .map(|i| (hamming(db.row(i).to_slice().unwrap(), q), i))
         .collect();
 
-    dist_idx.select_nth_unstable_by_key(k - 1, |&(d, _)| d);
-    dist_idx[..k].sort_unstable_by_key(|&(d, _)| d);
+    // Plain tuple ordering = (distance, index): deterministic tie-breaking
+    // that matches the NumPy fallback (hamming_topk_numpy).
+    dist_idx.select_nth_unstable(k - 1);
+    dist_idx[..k].sort_unstable();
 
     let indices: Vec<u64> = dist_idx[..k].iter().map(|&(_, i)| i as u64).collect();
     PyArray1::from_vec_bound(py, indices)
@@ -296,8 +298,10 @@ fn hamming_topk_parallel<'py>(
         .map(|(i, row)| (hamming(row, q), i))
         .collect();
 
-    dist_idx.select_nth_unstable_by_key(k - 1, |&(d, _)| d);
-    dist_idx[..k].sort_unstable_by_key(|&(d, _)| d);
+    // Plain tuple ordering = (distance, index): deterministic tie-breaking
+    // that matches the NumPy fallback (hamming_topk_numpy).
+    dist_idx.select_nth_unstable(k - 1);
+    dist_idx[..k].sort_unstable();
 
     let indices: Vec<u64> = dist_idx[..k].iter().map(|&(_, i)| i as u64).collect();
     PyArray1::from_vec_bound(py, indices)
@@ -318,8 +322,9 @@ fn finalize(buf: &mut Vec<(u32, u64)>, k: usize, out: &mut [u64]) {
     if kk == 0 {
         return;
     }
-    buf.select_nth_unstable_by_key(kk - 1, |&(d, _)| d);
-    buf[..kk].sort_unstable_by_key(|&(d, _)| d);
+    // (distance, index) tuple ordering — same tie-breaking as hamming_topk.
+    buf.select_nth_unstable(kk - 1);
+    buf[..kk].sort_unstable();
     for (slot, &(_, idx)) in out.iter_mut().zip(buf[..kk].iter()) {
         *slot = idx;
     }
@@ -364,7 +369,11 @@ fn process_chunk(
             // Trim once the buffer drifts past k; refresh the threshold to the
             // current k-th smallest distance.
             if buf.len() >= 2 * k {
-                buf.select_nth_unstable_by_key(k - 1, |&(d, _)| d);
+                // Tuple order (distance, index): a global top-k member by
+                // (d, i) is in the top-k of any subset containing it, so it
+                // can never be evicted here — keeps the batch path exactly
+                // consistent with hamming_topk's tie-breaking.
+                buf.select_nth_unstable(k - 1);
                 buf.truncate(k);
                 worst[qi] = buf.iter().map(|&(d, _)| d).max().unwrap_or(u32::MAX);
             }

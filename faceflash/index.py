@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 import json
 
-from faceflash.pca_quantize import PCABinaryQuantizer, _POPCOUNT_TABLE
+from faceflash.pca_quantize import PCABinaryQuantizer, _POPCOUNT_TABLE, hamming_topk_numpy
 from faceflash.cluster import CoarseCluster
 
 # Try Rust backend — packaged as faceflash._core, with a fallback to a
@@ -147,7 +147,16 @@ class FaceIndex:
 
     def _fit_pca(self):
         """Fit PCA+ITQ quantizer on accumulated vectors and re-encode all."""
-        self.quantizer.fit(self.float_vectors[:min(5000, self.count)])
+        # Random subsample, not the first N rows: enrollment order is
+        # correlated (register_folder goes person-by-person), so a prefix
+        # would train the quantizer on whoever enrolled first.
+        n_fit = min(5000, self.count)
+        if self.count > n_fit:
+            rng = np.random.default_rng(0)
+            sample = np.sort(rng.choice(self.count, size=n_fit, replace=False))
+            self.quantizer.fit(self.float_vectors[sample])
+        else:
+            self.quantizer.fit(self.float_vectors[:n_fit])
         self._pca_fitted = True
         # Re-encode all existing vectors with the fitted quantizer
         self.vectors = self.quantizer.encode(self.float_vectors)
@@ -212,9 +221,7 @@ class FaceIndex:
             topk = _rust.hamming_topk(query_packed, scan_vectors, n_cand)
             local_indices = np.asarray(topk).astype(np.intp)
         else:
-            xor = np.bitwise_xor(scan_vectors, query_packed.reshape(1, -1))
-            distances = _POPCOUNT_TABLE[xor].sum(axis=1)
-            local_indices = np.argpartition(distances, min(n_cand, len(distances) - 1))[:n_cand]
+            local_indices = hamming_topk_numpy(query_packed, scan_vectors, n_cand)
 
         # Map bucket-local indices back to global face indices
         candidate_indices = pool[local_indices] if pool is not None else local_indices
@@ -275,9 +282,10 @@ class FaceIndex:
             flat = _rust.hamming_topk_batch(q_packed, self.vectors, n_cand, parallel)
             cand = np.asarray(flat).astype(np.intp).reshape(m, -1)
         else:
-            xor = np.bitwise_xor(self.vectors[None, :, :], q_packed[:, None, :])
-            dists = _POPCOUNT_TABLE[xor].sum(axis=2)
-            cand = np.argpartition(dists, min(n_cand, self.count - 1), axis=1)[:, :n_cand]
+            cand = np.stack([
+                hamming_topk_numpy(q_packed[i], self.vectors, n_cand)
+                for i in range(m)
+            ])
 
         # Phase 2: cosine rerank per query (vectorized over candidates)
         results: List[List[Tuple[str, float, int]]] = []

@@ -101,9 +101,7 @@ class PCABinaryQuantizer:
                 _rust.hamming_topk(query_code, database_codes, n_cand)
             ).astype(np.intp)
         else:
-            xor = np.bitwise_xor(database_codes, query_code.reshape(1, -1))
-            distances = _POPCOUNT_TABLE[xor].sum(axis=1)
-            candidate_idx = np.argpartition(distances, n_cand)[:n_cand]
+            candidate_idx = hamming_topk_numpy(query_code, database_codes, n_cand)
 
         # Cosine rerank
         cand_vecs = database[candidate_idx]
@@ -132,6 +130,24 @@ class PCABinaryQuantizer:
 
 # Popcount LUT for NumPy fallback path
 _POPCOUNT_TABLE = np.array([bin(i).count('1') for i in range(256)], dtype=np.int32)
+
+
+def hamming_topk_numpy(query_code: np.ndarray, database_codes: np.ndarray,
+                       k: int) -> np.ndarray:
+    """Exact Hamming top-k with deterministic (distance, index) tie-breaking.
+
+    The Rust kernel breaks ties at the k boundary by index; argpartition
+    breaks them arbitrarily. Packing (distance, index) into one integer key
+    makes both backends return the identical candidate set, so results don't
+    depend on which backend is installed.
+    """
+    xor = np.bitwise_xor(database_codes, query_code.reshape(1, -1))
+    dists = _POPCOUNT_TABLE[xor].sum(axis=1)
+    n = len(dists)
+    k = min(k, n)
+    key = dists.astype(np.int64) * n + np.arange(n, dtype=np.int64)
+    idx = np.argpartition(key, k - 1)[:k]
+    return idx[np.argsort(key[idx])].astype(np.intp)
 
 
 def backend_info() -> str:
