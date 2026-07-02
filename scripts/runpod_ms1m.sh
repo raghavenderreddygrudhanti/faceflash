@@ -38,7 +38,7 @@ RUN_TS="$(date +%Y%m%d_%H%M%S)"
 export RUN_TS
 
 log "═══════════════════════════════════════════════════════════════"
-log "  FaceFlash — MS1MV2 Standalone Pipeline (85K identities)"
+log "  FaceFlash — MS1MV2 Reproducible Benchmark (85K identities)"
 log "═══════════════════════════════════════════════════════════════"
 log ""
 
