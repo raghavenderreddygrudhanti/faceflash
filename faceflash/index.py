@@ -204,7 +204,7 @@ class FaceIndex:
         # Phase 1: Hamming filter (Rust or NumPy)
         if n_candidates is None:
             n_candidates = max(100, k * 10)
-        n_candidates = min(n_candidates, self.count - 1) if self.count > 1 else 1
+        n_candidates = min(n_candidates, self.count)
 
         # Coarse clustering: restrict the scan to the closest buckets (sub-linear).
         # Without clustering, `pool` spans the whole database (full scan).
@@ -275,7 +275,7 @@ class FaceIndex:
 
         if n_candidates is None:
             n_candidates = max(100, k * 10)
-        n_cand = min(n_candidates, self.count - 1) if self.count > 1 else 1
+        n_cand = min(n_candidates, self.count)
 
         # Phase 1: one batched Hamming call -> (m, n_cand) candidate indices
         if _HAS_RUST:
@@ -405,6 +405,13 @@ class FaceIndex:
         Compacts the binary + float arrays in place. The PCA quantizer stays
         valid (no refit needed). Any coarse-clustering layer is invalidated and
         dropped — call `build_clusters()` again if you were using it.
+
+        If the index was loaded from disk (float vectors mmap'd), the on-disk
+        index directory is compacted too: the removed embeddings are deleted
+        from the .npy file (right-to-be-forgotten includes disk), the floats
+        stay mmap'd afterwards, and RAM stays at the binary-index size. A
+        naive fancy-index here would silently materialize the whole float
+        store into RAM.
         """
         self._flush_pending()
         if self.count == 0:
@@ -417,13 +424,58 @@ class FaceIndex:
         keep_idx = np.asarray(keep, dtype=np.intp)
         if self.vectors is not None:
             self.vectors = np.ascontiguousarray(self.vectors[keep_idx])
-        if self.float_vectors is not None:
-            self.float_vectors = np.ascontiguousarray(self.float_vectors[keep_idx])
         self.labels = [self.labels[i] for i in keep]
         self.paths = [self.paths[i] for i in keep]
         self.count = len(keep)
         self.cluster = None  # membership indices are now stale; rebuild if needed
+
+        float_is_mmap = (self.float_vectors is not None
+                         and hasattr(self.float_vectors, 'filename')
+                         and self.float_vectors.filename is not None)
+        if float_is_mmap:
+            self._compact_float_store(keep_idx)
+        elif self.float_vectors is not None:
+            self.float_vectors = np.ascontiguousarray(self.float_vectors[keep_idx])
         return n_removed
+
+    def _compact_float_store(self, keep_idx: np.ndarray):
+        """Rewrite the mmap'd float .npy without the removed rows, in chunks.
+
+        Copies kept rows block-by-block into a new memmap and atomically
+        replaces the backing file, so peak RAM stays at one block instead of
+        the whole float store. Also rewrites vectors.npy/metadata.json and
+        drops any stale clusters.npz so the index directory stays consistent
+        with what's in memory.
+        """
+        import os
+        fpath = Path(self.float_vectors.filename)
+        index_dir = fpath.parent
+        tmp = fpath.with_name(fpath.name + ".tmp")
+
+        out = np.lib.format.open_memmap(
+            tmp, mode='w+', dtype=np.float32, shape=(len(keep_idx), self.dim))
+        chunk = 8192
+        for s in range(0, len(keep_idx), chunk):
+            blk = keep_idx[s:s + chunk]
+            out[s:s + len(blk)] = self.float_vectors[blk]
+        out.flush()
+        del out
+        self.float_vectors = None   # drop the old mmap handle before replacing
+        os.replace(tmp, fpath)
+        self.float_vectors = np.load(fpath, mmap_mode='r')
+
+        # Keep the rest of the saved index in sync with the compaction
+        np.save(index_dir / "vectors.npy", self.vectors)
+        with open(index_dir / "metadata.json", "w") as f:
+            json.dump({
+                "labels": self.labels,
+                "paths": self.paths,
+                "count": self.count,
+                "pca_fitted": self._pca_fitted,
+            }, f)
+        cl_path = index_dir / "clusters.npz"
+        if cl_path.exists():
+            cl_path.unlink()        # assignments reference pre-removal indices
 
     def __len__(self) -> int:
         """Number of faces in the index (flushes any pending adds)."""
